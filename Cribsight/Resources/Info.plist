@@ -54,6 +54,8 @@
 	</array>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Cribsight connects directly to your cameras on your local network to show the live video.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Cribsight uses the camera permission for two-way video talk-back with supported cameras. It does not record from this device's camera in the background.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Cribsight uses the microphone permission to enable two-way talk-back to the nursery.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>

@@ -130,12 +130,27 @@ fragment float4 fsDewarp(VSOut in [[stage_in]],
         float phi = atan2(dir.y, dir.x);
         srcUV = fisheyeUV(theta, phi, u);
     } else {
-        // Little planet: stereographic projection looking down the lens axis.
+        // Little planet: stereographic projection of the fisheye onto a disc.
+        // pan spins the planet, tilt tips it up toward the horizon (Reolink-style
+        // "rise up into the room"), and zoom scales the planet.
         float2 p = (in.uv - 0.5) * 2.0;
         p.x *= max(u.viewAspect, 1e-4);
         float R = length(p) / max(u.zoom, 0.2);
-        float phi = atan2(p.y, p.x) + u.pan;
-        theta = 2.0 * atan(R);
+        float phi0 = atan2(p.y, p.x) + u.pan;       // spin around the lens axis
+        float theta0 = 2.0 * atan(R);               // 0 at center (nadir) → π at rim
+
+        // Stereographic plane coord → ray in the lens frame (+z = down the axis).
+        float3 ray = float3(sin(theta0) * cos(phi0),
+                            sin(theta0) * sin(phi0),
+                            cos(theta0));
+        // Tip the planet about the X axis so dragging up looks up toward the walls.
+        float ct = cos(u.tilt), st = sin(u.tilt);
+        float3 dir = float3(ray.x,
+                            ct * ray.y - st * ray.z,
+                            st * ray.y + ct * ray.z);
+
+        theta = acos(clamp(dir.z, -1.0, 1.0));
+        float phi = atan2(dir.y, dir.x);
         srcUV = fisheyeUV(theta, phi, u);
     }
 

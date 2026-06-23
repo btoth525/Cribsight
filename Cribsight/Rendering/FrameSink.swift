@@ -52,7 +52,7 @@ final class FrameSink: NSObject, RTCVideoRenderer {
 
     // MARK: I420 → NV12 fallback (used only when frames aren't hardware-decoded)
 
-    private static func makePixelBuffer(from i420: RTCI420Buffer) -> CVPixelBuffer? {
+    private static func makePixelBuffer(from i420: RTCI420BufferProtocol) -> CVPixelBuffer? {
         let width = Int(i420.width)
         let height = Int(i420.height)
         let attrs: [String: Any] = [

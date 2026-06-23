@@ -153,7 +153,7 @@ final class WebRTCClient: NSObject {
         signaling.exchange(offer: local.sdp,
                            streamName: streamName,
                            onRemoteCandidate: { [weak self] candidate in
-            self?.peerConnection?.add(candidate)
+            self?.peerConnection?.add(candidate) { _ in }
         }) { [weak self] result in
             guard let self = self else { return }
             switch result {

@@ -37,13 +37,12 @@ struct NightModeSettings: Codable, Equatable {
     }
 }
 
-/// The full persisted settings blob.
+/// The full persisted settings blob (v2: dynamic cameras + layouts + connection).
 struct AppSettings: Codable, Equatable {
-    var serverHost: String = ""
-    var serverPort: Int = 1984
-    var useTLS: Bool = false
-    var cameraA: CameraSettings = .owlet()
-    var cameraB: CameraSettings = .reolink()
+    var connection: ConnectionSettings = ConnectionSettings()
+    var cameras: [CameraSettings] = CameraSettings.defaults()
+    var layouts: [PaneLayout] = []
+    var activeLayoutID: UUID? = nil
     var nightMode: NightModeSettings = NightModeSettings()
     var cryAlertsEnabled: Bool = true
     var cryChimeEnabled: Bool = false
@@ -54,14 +53,14 @@ struct AppSettings: Codable, Equatable {
 }
 
 /// App-wide configuration store. Persists to UserDefaults as JSON and republishes
-/// changes to SwiftUI. Bindings into nested fields (e.g. `$config.settings.cameraB.dewarp.radius`)
-/// work because `settings` is a published mutable value.
+/// changes to SwiftUI. The Frigate password is kept in the Keychain, not here.
 final class AppConfig: ObservableObject {
     @Published var settings: AppSettings {
         didSet { persist() }
     }
 
-    private let storageKey = "cribsight.settings.v1"
+    private let storageKey = "cribsight.settings.v2"
+    private let legacyKey = "cribsight.settings.v1"
     private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
@@ -69,6 +68,8 @@ final class AppConfig: ObservableObject {
         if let data = defaults.data(forKey: storageKey),
            let decoded = try? JSONDecoder().decode(AppSettings.self, from: data) {
             self.settings = decoded
+        } else if let migrated = AppConfig.migrateLegacy(defaults: defaults, key: legacyKey) {
+            self.settings = migrated
         } else {
             self.settings = .default
         }
@@ -79,21 +80,135 @@ final class AppConfig: ObservableObject {
         defaults.set(data, forKey: storageKey)
     }
 
-    // MARK: Derived
+    // MARK: Credentials (Keychain)
 
-    var isConfigured: Bool {
-        !settings.serverHost.trimmingCharacters(in: .whitespaces).isEmpty
-            && !settings.cameraA.streamName.isEmpty
-            && !settings.cameraB.streamName.isEmpty
+    var frigatePassword: String? {
+        get { Keychain.get(account: ConnectionSettings.keychainAccount) }
+        set { Keychain.set(newValue, account: ConnectionSettings.keychainAccount) }
     }
 
-    var cameras: [CameraSettings] { [settings.cameraA, settings.cameraB] }
+    // MARK: Derived
 
-    var scheme: String { settings.useTLS ? "https" : "http" }
-    var wsScheme: String { settings.useTLS ? "wss" : "ws" }
+    var connection: ConnectionSettings { settings.connection }
 
-    /// `http://host:port` base for the go2rtc API.
-    func apiBase() -> String {
-        "\(scheme)://\(settings.serverHost):\(settings.serverPort)"
+    var isConfigured: Bool {
+        settings.connection.isComplete && !settings.cameras.isEmpty
+            && settings.cameras.contains { !$0.streamName.isEmpty }
+    }
+
+    var cameras: [CameraSettings] { settings.cameras }
+
+    var scheme: String { settings.connection.scheme }
+    var wsScheme: String { settings.connection.wsScheme }
+
+    /// API base for go2rtc/Frigate (login, config, discovery, WHEP).
+    func apiBase() -> String { settings.connection.apiBase }
+
+    func camera(for id: UUID) -> CameraSettings? {
+        settings.cameras.first { $0.id == id }
+    }
+
+    // MARK: Layouts
+
+    /// The currently selected layout, falling back to an auto grid of all cameras.
+    var activeLayout: PaneLayout {
+        if let id = settings.activeLayoutID,
+           let layout = settings.layouts.first(where: { $0.id == id }) {
+            return sanitized(layout)
+        }
+        if let first = settings.layouts.first { return sanitized(first) }
+        return PaneLayout.auto(cameraIDs: settings.cameras.map { $0.id })
+    }
+
+    /// Drop slots whose camera no longer exists so we never render a dead pane.
+    private func sanitized(_ layout: PaneLayout) -> PaneLayout {
+        let ids = Set(settings.cameras.map { $0.id })
+        var l = layout
+        l.slots = layout.slots.filter { ids.contains($0.cameraID) }
+        if l.slots.isEmpty {
+            l.slots = PaneLayout.auto(cameraIDs: settings.cameras.map { $0.id }).slots
+        }
+        return l
+    }
+
+    /// Replace (or insert) a layout and make it active.
+    func saveLayout(_ layout: PaneLayout) {
+        if let idx = settings.layouts.firstIndex(where: { $0.id == layout.id }) {
+            settings.layouts[idx] = layout
+        } else {
+            settings.layouts.append(layout)
+        }
+        settings.activeLayoutID = layout.id
+    }
+
+    func deleteLayout(_ id: UUID) {
+        settings.layouts.removeAll { $0.id == id }
+        if settings.activeLayoutID == id { settings.activeLayoutID = settings.layouts.first?.id }
+    }
+
+    func selectLayout(_ id: UUID) { settings.activeLayoutID = id }
+
+    /// Ensure there's at least one saved layout (used after onboarding).
+    func ensureDefaultLayout() {
+        guard settings.layouts.isEmpty else { return }
+        let layout = PaneLayout.auto(cameraIDs: settings.cameras.map { $0.id }, name: "Default")
+        settings.layouts = [layout]
+        settings.activeLayoutID = layout.id
+    }
+
+    // MARK: Cameras
+
+    func addCamera(_ camera: CameraSettings) {
+        settings.cameras.append(camera)
+    }
+
+    func removeCamera(_ id: UUID) {
+        settings.cameras.removeAll { $0.id == id }
+        // Prune from every layout too.
+        for i in settings.layouts.indices {
+            settings.layouts[i].slots.removeAll { $0.cameraID == id }
+        }
+    }
+
+    // MARK: Migration
+
+    private struct LegacyV1: Codable {
+        var serverHost: String?
+        var serverPort: Int?
+        var useTLS: Bool?
+        var cameraA: CameraSettings?
+        var cameraB: CameraSettings?
+        var nightMode: NightModeSettings?
+        var cryAlertsEnabled: Bool?
+        var cryChimeEnabled: Bool?
+        var keepAwake: Bool?
+        var hasCompletedOnboarding: Bool?
+    }
+
+    private static func migrateLegacy(defaults: UserDefaults, key: String) -> AppSettings? {
+        guard let data = defaults.data(forKey: key),
+              let old = try? JSONDecoder().decode(LegacyV1.self, from: data) else { return nil }
+        var s = AppSettings()
+        s.connection.mode = .go2rtc
+        s.connection.host = old.serverHost ?? ""
+        s.connection.go2rtcPort = old.serverPort ?? 1984
+        s.connection.useTLS = old.useTLS ?? false
+
+        var cams: [CameraSettings] = []
+        if let a = old.cameraA { cams.append(a) }
+        if let b = old.cameraB { cams.append(b) }
+        if cams.isEmpty { cams = CameraSettings.defaults() }
+        s.cameras = cams
+
+        s.nightMode = old.nightMode ?? NightModeSettings()
+        s.cryAlertsEnabled = old.cryAlertsEnabled ?? true
+        s.cryChimeEnabled = old.cryChimeEnabled ?? false
+        s.keepAwake = old.keepAwake ?? true
+        s.hasCompletedOnboarding = old.hasCompletedOnboarding ?? false
+
+        let layout = PaneLayout.auto(cameraIDs: cams.map { $0.id }, name: "Default")
+        s.layouts = [layout]
+        s.activeLayoutID = layout.id
+        return s
     }
 }

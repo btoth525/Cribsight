@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// The main monitor screen: adaptive split of the two panes, glass controls,
-/// preset picker, night mode, kiosk lock, and toasts.
+/// The main monitor screen: the active layout of camera panes positioned by
+/// normalized frames, glass controls, preset picker, night mode, kiosk lock,
+/// and toasts.
 struct MonitorView: View {
     @ObservedObject var vm: MonitorViewModel
     @State private var showSettings = false
@@ -59,19 +60,7 @@ struct MonitorView: View {
                                onToast: { vm.showToast($0) })
                     .ignoresSafeArea()
             } else {
-                let isWide = geo.size.width >= geo.size.height
-                let layout = isWide ? AnyLayout(HStackLayout(spacing: 10))
-                                    : AnyLayout(VStackLayout(spacing: 10))
-                layout {
-                    ForEach(vm.orderedPanes) { pane in
-                        CameraPaneView(pane: pane,
-                                       isFullscreen: false,
-                                       controlsVisible: vm.controlsVisible,
-                                       onToggleFullscreen: { vm.toggleFullscreen(pane.id) },
-                                       onToast: { vm.showToast($0) })
-                    }
-                }
-                .padding(10)
+                LayoutCanvas(vm: vm, size: geo.size)
             }
         }
     }
@@ -80,7 +69,14 @@ struct MonitorView: View {
 
     @ViewBuilder
     private var bottomControls: some View {
-        if !vm.locked && vm.controlsVisible {
+        if vm.editingLayout {
+            VStack {
+                Spacer()
+                LayoutEditorBar(vm: vm)
+            }
+            .padding(.bottom, 18)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        } else if !vm.locked && vm.controlsVisible {
             VStack(spacing: 12) {
                 Spacer()
                 if let fisheye = fisheyePane,

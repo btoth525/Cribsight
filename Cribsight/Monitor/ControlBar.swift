@@ -9,8 +9,9 @@ struct ControlBar: View {
         HStack(spacing: 10) {
             GlassIconButton(systemName: "gearshape.fill") { onOpenSettings() }
 
-            if vm.panes.count == 2 {
-                GlassIconButton(systemName: "rectangle.2.swap") { vm.toggleSwap() }
+            GlassIconButton(systemName: "square.grid.2x2",
+                            active: vm.editingLayout) {
+                vm.setEditingLayout(!vm.editingLayout)
             }
 
             GlassIconButton(systemName: vm.nightActive ? "moon.fill" : "moon",

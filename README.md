@@ -1,16 +1,22 @@
 # Cribsight 👁️
 
-A native **SwiftUI** split-screen baby monitor for iPad/iPhone. Two live camera
-panes side-by-side over your **LAN only** (no cloud), with a real-time **Metal
-fisheye dewarp**, a modern **Liquid Glass** UI, listen-in audio with **cry/sound
-alerts**, and rock-solid auto-reconnect for an always-on nursery display.
+A native **SwiftUI** multi-camera baby monitor for iPad/iPhone. As many live
+camera panes as you want, arranged in **custom drag-to-resize layouts**, over
+your **LAN only** (no cloud), with a real-time **Metal fisheye dewarp**, a modern
+**Liquid Glass** UI, listen-in audio with **cry/sound alerts**, and rock-solid
+auto-reconnect for an always-on nursery display.
 
-- **Pane A — "Owlet"**: normal passthrough view.
-- **Pane B — "Reolink fisheye"** (ceiling-mounted): live dewarped panorama with
+- **Any number of cameras** — add them, then drag/resize/rearrange the panes
+  into your own layout (side-by-side, stacked, one-bigger, grid, picture-in-pic).
+- **Fisheye cameras** (ceiling-mounted) get a live dewarped panorama with
   interactive pan / tilt / zoom and snap-to-crib presets.
 
-Video comes from your existing **Frigate → go2rtc** setup over **WebRTC/WHEP**
-(sub-second latency).
+Video comes from your existing **Frigate → go2rtc** setup over **WebRTC**
+(sub-second latency). Connect two ways:
+
+- **Direct (go2rtc)** — straight to go2rtc's API port (1984), no login.
+- **Frigate login** — through Frigate's authenticated port (8971) with your
+  username/password; Cribsight logs in and lists your cameras for you.
 
 ---
 
@@ -95,17 +101,31 @@ Then:
 
 ## 3. First run
 
-On first launch the onboarding screen asks for:
+On first launch the onboarding screen asks you to:
 
-- **Server IP / host** and **port** (your Frigate box, `1984`)
-- Tap **Connect & find cameras** — Cribsight queries go2rtc and lists every
-  stream it finds. Tap a chip to assign one to **Camera A** and one to
-  **Camera B** (no need to type the names by hand).
-- Set each pane's **display name**.
+1. Pick a **connection mode**:
+   - **Direct (go2rtc)** — enter host + port `1984`.
+   - **Frigate login** — enter host + port `8971`, plus your Frigate
+     **username/password** (stored in the iOS Keychain, never on disk).
+2. Tap **Connect & find cameras** — Cribsight reaches your server (logging in if
+   needed) and lists every stream it finds. Tap a chip to fill a camera's stream
+   name (no typing).
+3. Add as many **cameras** as you like, name them, and flag any **fisheye** ones.
 
-Tap **Start Monitoring**. Both panes should go **Live** in well under a second.
-You can re-run discovery and change any of this later from the **gear ▸
-Settings** sheet.
+Tap **Start Monitoring**. Panes should go **Live** in well under a second.
+
+### Arranging your layout
+
+Tap the **grid button** in the bottom control bar to enter layout mode, then:
+
+- **Drag** a pane to move it, drag the **corner handle** to resize, tap **✕** to
+  remove it. Edits snap to a grid and save automatically.
+- Use the **presets** (side-by-side, stacked, one-bigger, grid, picture-in-pic)
+  as a starting point, or **Add camera** to drop another pane in.
+- Save multiple named layouts and switch between them in **Settings ▸ Layouts**.
+
+Everything (cameras, layouts, fisheye calibration) is editable later from the
+**gear ▸ Settings** sheet.
 
 ---
 

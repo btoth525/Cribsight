@@ -7,6 +7,9 @@ struct CameraPaneView: View {
     @ObservedObject var pane: PaneViewModel
     var isFullscreen: Bool
     var controlsVisible: Bool
+    /// When false (e.g. while arranging the layout), the pane's own PTZ gestures
+    /// and quick controls are suppressed so drag-to-move/resize wins.
+    var interactive: Bool = true
     var onToggleFullscreen: () -> Void
     var onToast: (String) -> Void
 
@@ -20,9 +23,14 @@ struct CameraPaneView: View {
             ZStack {
                 Color.black
 
-                MetalDewarpView(renderer: pane.renderer)
-                    .gesture(dragGesture(geo.size))
-                    .simultaneousGesture(magnifyGesture())
+                if interactive {
+                    MetalDewarpView(renderer: pane.renderer)
+                        .gesture(dragGesture(geo.size))
+                        .simultaneousGesture(magnifyGesture())
+                } else {
+                    MetalDewarpView(renderer: pane.renderer)
+                        .allowsHitTesting(false)
+                }
 
                 if !pane.connectionState.isLive {
                     offlineVeil

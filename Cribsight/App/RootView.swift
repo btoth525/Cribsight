@@ -13,6 +13,7 @@ struct RootView: View {
             } else {
                 OnboardingView(config: config) {
                     config.settings.hasCompletedOnboarding = true
+                    config.ensureDefaultLayout()
                     monitor.rebuildPanes()
                     monitor.start()
                 }

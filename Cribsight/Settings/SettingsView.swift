@@ -5,15 +5,15 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var config: AppConfig
     @StateObject private var catalog = StreamCatalog()
+    @State private var password: String = ""
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
             Form {
-                serverSection
-                cameraSection(\.cameraA, title: "Camera A")
-                cameraSection(\.cameraB, title: "Camera B (Fisheye)")
-                fisheyeSection
+                connectionSection
+                camerasSection
+                layoutsSection
                 alertsSection
                 displaySection
                 helpSection
@@ -24,113 +24,146 @@ struct SettingsView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                        .fontWeight(.semibold)
+                    Button("Done") {
+                        config.frigatePassword = password
+                        dismiss()
+                    }
+                    .fontWeight(.semibold)
                 }
             }
         }
         .preferredColorScheme(.dark)
         .tint(Theme.accent)
+        .onAppear { password = config.frigatePassword ?? "" }
     }
 
-    // MARK: Sections
+    // MARK: Connection
 
-    private var serverSection: some View {
+    private var connectionSection: some View {
         Section {
+            Picker("Mode", selection: $config.settings.connection.mode) {
+                ForEach(ConnectionMode.allCases) { Text($0.label).tag($0) }
+            }
             HStack {
-                Text("Host")
-                Spacer()
-                TextField("192.168.1.50", text: $config.settings.serverHost)
+                Text("Host"); Spacer()
+                TextField("192.168.1.50", text: $config.settings.connection.host)
                     .multilineTextAlignment(.trailing)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never).autocorrectionDisabled()
                     .keyboardType(.URL)
             }
             HStack {
-                Text("Port")
-                Spacer()
-                TextField("1984", value: $config.settings.serverPort, format: .number.grouping(.never))
-                    .multilineTextAlignment(.trailing)
-                    .keyboardType(.numberPad)
-                    .frame(width: 90)
+                Text("Port"); Spacer()
+                TextField(config.settings.connection.mode == .frigate ? "8971" : "1984",
+                          value: portBinding, format: .number.grouping(.never))
+                    .multilineTextAlignment(.trailing).keyboardType(.numberPad).frame(width: 90)
             }
-            Toggle("Use HTTPS / WSS", isOn: $config.settings.useTLS)
+            if config.settings.connection.mode == .frigate {
+                HStack {
+                    Text("Username"); Spacer()
+                    TextField("admin", text: $config.settings.connection.username)
+                        .multilineTextAlignment(.trailing)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                }
+                HStack {
+                    Text("Password"); Spacer()
+                    SecureField("••••••••", text: $password).multilineTextAlignment(.trailing)
+                }
+            }
+            Toggle("Use HTTPS / WSS", isOn: $config.settings.connection.useTLS)
 
             Button {
                 Haptics.tap()
-                catalog.discover(apiBase: config.apiBase())
+                config.frigatePassword = password
+                catalog.discover(connection: config.settings.connection, password: password)
             } label: {
                 HStack {
-                    if catalog.isLoading {
-                        ProgressView()
-                    } else {
-                        Image(systemName: "antenna.radiowaves.left.and.right")
-                    }
+                    if catalog.isLoading { ProgressView() }
+                    else { Image(systemName: "antenna.radiowaves.left.and.right") }
                     Text(catalog.isLoading ? "Connecting…" : "Connect & find cameras")
                 }
             }
-            .disabled(config.settings.serverHost.trimmingCharacters(in: .whitespaces).isEmpty || catalog.isLoading)
+            .disabled(!config.settings.connection.isComplete || catalog.isLoading)
 
             if catalog.state != .idle {
                 DiscoveryStatusLabel(state: catalog.state)
             }
         } header: {
-            Text("Frigate / go2rtc Server")
+            Text(config.settings.connection.mode == .frigate ? "Frigate login" : "go2rtc server")
         } footer: {
-            Text("Point this at your Frigate box (go2rtc API, normally port 1984) — one connection per camera is reused for every viewer. For WebRTC on your LAN, set `webrtc.candidates: [\"\(config.settings.serverHost.isEmpty ? "<server-ip>" : config.settings.serverHost):8555\"]` in the go2rtc config.")
+            Text("For sub-second video, port 8555 (TCP+UDP) must be reachable on your LAN, with `webrtc.candidates: [\"\(config.settings.connection.hostTrimmed.isEmpty ? "<server-ip>" : config.settings.connection.hostTrimmed):8555\"]` in go2rtc.")
         }
     }
 
-    private func cameraSection(_ keyPath: WritableKeyPath<AppSettings, CameraSettings>, title: String) -> some View {
-        Section(title) {
-            HStack {
-                Text("Display name")
-                Spacer()
-                TextField("Name", text: binding(keyPath, \.displayName))
-                    .multilineTextAlignment(.trailing)
-            }
-            HStack {
-                Text("go2rtc stream")
-                Spacer()
-                TextField("stream", text: binding(keyPath, \.streamName))
-                    .multilineTextAlignment(.trailing)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-            }
-            if !catalog.names.isEmpty {
-                StreamChips(streamName: binding(keyPath, \.streamName), available: catalog.names)
-            }
-            Toggle("Start muted", isOn: binding(keyPath, \.startMuted))
-            VStack(alignment: .leading) {
-                Text("Cry sensitivity: \(Int(config.settings[keyPath: keyPath].crySensitivity * 100))%")
-                    .font(.caption)
-                    .foregroundStyle(Theme.textSecondary)
-                Slider(value: binding(keyPath, \.crySensitivity), in: 0...1)
-            }
-        }
-    }
+    // MARK: Cameras
 
-    private var fisheyeSection: some View {
+    private var camerasSection: some View {
         Section {
-            Picker("Default mode", selection: $config.settings.cameraB.dewarp.mode) {
-                ForEach(FisheyeProjectionMode.allCases) { mode in
-                    Text(mode.label).tag(mode)
+            ForEach($config.settings.cameras) { $cam in
+                NavigationLink {
+                    CameraSettingsView(config: config, cameraID: cam.id, availableStreams: catalog.names)
+                } label: {
+                    HStack {
+                        Image(systemName: cam.isFisheye ? "circle.circle" : "video")
+                            .foregroundStyle(Theme.accent)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(cam.displayName.isEmpty ? "Camera" : cam.displayName)
+                            Text(cam.streamName.isEmpty ? "no stream set" : cam.streamName)
+                                .font(.caption).foregroundStyle(Theme.textTertiary)
+                        }
+                    }
                 }
             }
-            calibrationSlider("Center X", $config.settings.cameraB.dewarp.centerX, 0.3...0.7)
-            calibrationSlider("Center Y", $config.settings.cameraB.dewarp.centerY, 0.3...0.7)
-            calibrationSlider("Radius", $config.settings.cameraB.dewarp.radius, 0.2...0.7)
-            calibrationSlider("Lens FOV°", $config.settings.cameraB.dewarp.lensFOVDegrees, 120...240, fmt: "%.0f")
-            calibrationSlider("Zoom FOV°", $config.settings.cameraB.dewarp.outputFOVDegrees, 50...140, fmt: "%.0f")
-            calibrationSlider("Pano top°", $config.settings.cameraB.dewarp.panoramaUpDegrees, -20...40, fmt: "%.0f")
-            calibrationSlider("Pano bottom°", $config.settings.cameraB.dewarp.panoramaDownDegrees, 40...100, fmt: "%.0f")
-            Toggle("Flip horizontally", isOn: $config.settings.cameraB.dewarp.flipHorizontal)
+            .onDelete { idx in
+                idx.map { config.settings.cameras[$0].id }.forEach { config.removeCamera($0) }
+            }
+            Button {
+                config.addCamera(.blank()); Haptics.tap()
+            } label: {
+                Label("Add camera", systemImage: "plus")
+            }
         } header: {
-            Text("Fisheye Calibration")
-        } footer: {
-            Text("Dial these in so the circular image fills the dewarp. Changes apply when you close Settings.")
+            Text("Cameras")
         }
     }
+
+    // MARK: Layouts
+
+    private var layoutsSection: some View {
+        Section {
+            ForEach(config.settings.layouts) { layout in
+                Button {
+                    config.selectLayout(layout.id); Haptics.selection()
+                } label: {
+                    HStack {
+                        Text(layout.name)
+                        Spacer()
+                        Text("\(layout.slots.count) pane\(layout.slots.count == 1 ? "" : "s")")
+                            .font(.caption).foregroundStyle(Theme.textTertiary)
+                        if config.settings.activeLayoutID == layout.id {
+                            Image(systemName: "checkmark").foregroundStyle(Theme.accent)
+                        }
+                    }
+                }
+                .foregroundStyle(Theme.textPrimary)
+            }
+            .onDelete { idx in
+                idx.map { config.settings.layouts[$0].id }.forEach { config.deleteLayout($0) }
+            }
+            Button {
+                let layout = PaneLayout.auto(cameraIDs: config.settings.cameras.map { $0.id },
+                                             name: "Grid \(config.settings.layouts.count + 1)")
+                config.saveLayout(layout); Haptics.tap()
+            } label: {
+                Label("New layout from all cameras", systemImage: "plus.rectangle.on.rectangle")
+            }
+        } header: {
+            Text("Layouts")
+        } footer: {
+            Text("Tap the grid button on the monitor to drag, resize and rearrange panes.")
+        }
+    }
+
+    // MARK: Other
 
     private var alertsSection: some View {
         Section("Alerts") {
@@ -143,9 +176,7 @@ struct SettingsView: View {
         Section("Display") {
             Toggle("Keep screen awake", isOn: $config.settings.keepAwake)
             Picker("Night mode", selection: $config.settings.nightMode.trigger) {
-                ForEach(NightModeTrigger.allCases) { t in
-                    Text(t.label).tag(t)
-                }
+                ForEach(NightModeTrigger.allCases) { Text($0.label).tag($0) }
             }
             VStack(alignment: .leading) {
                 Text("Dim: \(Int(config.settings.nightMode.dim * 100))%")
@@ -170,38 +201,24 @@ struct SettingsView: View {
         Section {
             Label("Lock the app with iOS Guided Access (triple-click the side button) to use it as a kiosk.",
                   systemImage: "lock.shield")
-                .font(.footnote)
-                .foregroundStyle(Theme.textSecondary)
+                .font(.footnote).foregroundStyle(Theme.textSecondary)
         } header: {
             Text("Kiosk")
         } footer: {
-            Text("Cribsight · v1.0 · LAN-only, no cloud.")
+            Text("Cribsight · v2 · LAN-only, no cloud.")
         }
     }
 
     // MARK: Helpers
 
-    private func calibrationSlider(_ title: String,
-                                   _ value: Binding<Float>,
-                                   _ range: ClosedRange<Float>,
-                                   fmt: String = "%.2f") -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack {
-                Text(title).font(.caption).foregroundStyle(Theme.textSecondary)
-                Spacer()
-                Text(String(format: fmt, value.wrappedValue))
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(Theme.textTertiary)
-            }
-            Slider(value: value, in: range)
-        }
-    }
-
-    private func binding<Value>(_ camera: WritableKeyPath<AppSettings, CameraSettings>,
-                                _ field: WritableKeyPath<CameraSettings, Value>) -> Binding<Value> {
+    private var portBinding: Binding<Int> {
         Binding(
-            get: { config.settings[keyPath: camera][keyPath: field] },
-            set: { config.settings[keyPath: camera][keyPath: field] = $0 }
+            get: { config.settings.connection.mode == .frigate
+                    ? config.settings.connection.frigatePort : config.settings.connection.go2rtcPort },
+            set: {
+                if config.settings.connection.mode == .frigate { config.settings.connection.frigatePort = $0 }
+                else { config.settings.connection.go2rtcPort = $0 }
+            }
         )
     }
 }

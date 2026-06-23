@@ -26,18 +26,24 @@ final class PaneViewModel: ObservableObject, Identifiable {
     private var statsMonitor: StatsMonitor?
     private let cryDetector = CryDetector()
 
-    private var apiBase: String
+    private var connection: ConnectionSettings
+    private let tokenProvider: () -> String?
     private var cryAlertsEnabled: Bool
     private var cryChimeEnabled: Bool
     private(set) var isRunning = false
 
-    init(camera: CameraSettings, apiBase: String, cryAlertsEnabled: Bool, cryChimeEnabled: Bool) {
+    init(camera: CameraSettings,
+         connection: ConnectionSettings,
+         tokenProvider: @escaping () -> String?,
+         cryAlertsEnabled: Bool,
+         cryChimeEnabled: Bool) {
         self.id = camera.id
         self.camera = camera
         self.isMuted = camera.startMuted
         self.orientation = camera.dewarp.defaultOrientation
         self.mode = camera.dewarp.mode
-        self.apiBase = apiBase
+        self.connection = connection
+        self.tokenProvider = tokenProvider
         self.cryAlertsEnabled = cryAlertsEnabled
         self.cryChimeEnabled = cryChimeEnabled
         self.cryDetector.sensitivity = camera.crySensitivity
@@ -62,7 +68,8 @@ final class PaneViewModel: ObservableObject, Identifiable {
         guard !isRunning else { return }
         isRunning = true
 
-        let signaling = WHEPSignaling(apiBase: apiBase)
+        let signaling = SignalingProvider(connection: connection,
+                                          tokenProvider: tokenProvider).make()
         let client = WebRTCClient(streamName: camera.streamName,
                                   startMuted: isMuted,
                                   signaling: signaling)
@@ -158,10 +165,10 @@ final class PaneViewModel: ObservableObject, Identifiable {
 
     // MARK: Config updates
 
-    func updateConfig(camera: CameraSettings, apiBase: String, cryAlertsEnabled: Bool, cryChimeEnabled: Bool) {
-        let needsReconnect = camera.streamName != self.camera.streamName || apiBase != self.apiBase
+    func updateConfig(camera: CameraSettings, connection: ConnectionSettings, cryAlertsEnabled: Bool, cryChimeEnabled: Bool) {
+        let needsReconnect = camera.streamName != self.camera.streamName || connection != self.connection
         self.camera = camera
-        self.apiBase = apiBase
+        self.connection = connection
         self.cryAlertsEnabled = cryAlertsEnabled
         self.cryChimeEnabled = cryChimeEnabled
         self.cryDetector.sensitivity = camera.crySensitivity

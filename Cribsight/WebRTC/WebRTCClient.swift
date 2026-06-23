@@ -10,7 +10,7 @@ import WebRTC
 final class WebRTCClient: NSObject {
 
     let streamName: String
-    private let signaling: WHEPSignaling
+    private let signaling: Signaling
     private let startMuted: Bool
 
     private var peerConnection: RTCPeerConnection?
@@ -34,7 +34,7 @@ final class WebRTCClient: NSObject {
         }
     }
 
-    init(streamName: String, startMuted: Bool, signaling: WHEPSignaling) {
+    init(streamName: String, startMuted: Bool, signaling: Signaling) {
         self.streamName = streamName
         self.signaling = signaling
         self.startMuted = startMuted
@@ -115,6 +115,7 @@ final class WebRTCClient: NSObject {
     private func teardownConnection() {
         gatheringFallbackTimer?.invalidate()
         gatheringFallbackTimer = nil
+        signaling.cancel()
         if let track = remoteVideoTrack {
             renderers.forEach { track.remove($0) }
         }
@@ -149,7 +150,11 @@ final class WebRTCClient: NSObject {
         gatheringFallbackTimer?.invalidate()
         gatheringFallbackTimer = nil
 
-        signaling.exchange(offer: local.sdp, streamName: streamName) { [weak self] result in
+        signaling.exchange(offer: local.sdp,
+                           streamName: streamName,
+                           onRemoteCandidate: { [weak self] candidate in
+            self?.peerConnection?.add(candidate)
+        }) { [weak self] result in
             guard let self = self else { return }
             switch result {
             case .failure(let error):

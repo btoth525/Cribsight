@@ -1,20 +1,20 @@
 import SwiftUI
 import UIKit
 
-/// First-run setup: capture the go2rtc server and the two stream names.
+/// First-run setup: choose how to connect (Direct go2rtc or Frigate login),
+/// discover cameras, and assign them.
 struct OnboardingView: View {
     @ObservedObject var config: AppConfig
     @StateObject private var catalog = StreamCatalog()
+    @State private var password: String = ""
     var onDone: () -> Void
 
-    private var canStart: Bool {
-        !config.settings.serverHost.trimmingCharacters(in: .whitespaces).isEmpty
-            && !config.settings.cameraA.streamName.isEmpty
-            && !config.settings.cameraB.streamName.isEmpty
-    }
+    private var connection: ConnectionSettings { config.settings.connection }
 
-    private var serverHostEmpty: Bool {
-        config.settings.serverHost.trimmingCharacters(in: .whitespaces).isEmpty
+    private var canStart: Bool {
+        guard connection.isComplete else { return false }
+        if connection.mode == .frigate && password.isEmpty { return false }
+        return config.settings.cameras.contains { !$0.streamName.trimmingCharacters(in: .whitespaces).isEmpty }
     }
 
     var body: some View {
@@ -42,6 +42,7 @@ struct OnboardingView: View {
         }
         .preferredColorScheme(.dark)
         .tint(Theme.accent)
+        .onAppear { password = config.frigatePassword ?? "" }
     }
 
     private var header: some View {
@@ -58,111 +59,177 @@ struct OnboardingView: View {
             Text("Cribsight")
                 .font(.largeTitle.bold())
                 .foregroundStyle(Theme.textPrimary)
-            Text("Your split-screen nursery monitor")
+            Text("Your multi-camera nursery monitor")
                 .font(.subheadline)
                 .foregroundStyle(Theme.textSecondary)
         }
         .padding(.top, 24)
     }
 
+    // MARK: Server / connection
+
     private var serverCard: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Frigate / go2rtc server")
+            Text("Connection")
                 .font(.headline)
                 .foregroundStyle(Theme.textPrimary)
-            Text("Point Cribsight at your existing Frigate box. It already keeps one connection to each camera, so nothing extra hits the cameras.")
+
+            Picker("Mode", selection: $config.settings.connection.mode) {
+                ForEach(ConnectionMode.allCases) { Text($0.label).tag($0) }
+            }
+            .pickerStyle(.segmented)
+
+            Text(connection.mode.blurb)
                 .font(.caption)
                 .foregroundStyle(Theme.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
-            field("Server IP / host", text: $config.settings.serverHost,
+
+            field("Server IP / host", text: $config.settings.connection.host,
                   placeholder: "192.168.1.50", keyboard: .URL)
+
             HStack {
-                Text("Port")
-                    .foregroundStyle(Theme.textSecondary)
+                Text("Port").foregroundStyle(Theme.textSecondary)
                 Spacer()
-                TextField("1984", value: $config.settings.serverPort,
+                TextField(connection.mode == .frigate ? "8971" : "1984", value: portBinding,
                           format: .number.grouping(.never))
                     .keyboardType(.numberPad)
                     .multilineTextAlignment(.trailing)
                     .frame(width: 100)
             }
 
+            if connection.mode == .frigate {
+                field("Username", text: $config.settings.connection.username, placeholder: "admin")
+                secureField("Password", text: $password)
+            }
+
+            Toggle("Use HTTPS / WSS", isOn: $config.settings.connection.useTLS)
+                .font(.subheadline)
+
             Button {
                 Haptics.tap()
-                catalog.discover(apiBase: config.apiBase())
+                config.frigatePassword = password
+                catalog.discover(connection: config.settings.connection, password: password)
             } label: {
                 HStack(spacing: 8) {
-                    if catalog.isLoading {
-                        ProgressView().tint(Theme.textPrimary)
-                    } else {
-                        Image(systemName: "antenna.radiowaves.left.and.right")
-                    }
+                    if catalog.isLoading { ProgressView().tint(Theme.textPrimary) }
+                    else { Image(systemName: "antenna.radiowaves.left.and.right") }
                     Text(catalog.isLoading ? "Connecting…" : "Connect & find cameras")
                 }
                 .frame(maxWidth: .infinity)
             }
             .glassButton()
-            .disabled(serverHostEmpty || catalog.isLoading)
-            .opacity(serverHostEmpty ? 0.5 : 1)
+            .disabled(!connection.isComplete || catalog.isLoading
+                      || (connection.mode == .frigate && password.isEmpty))
+            .opacity(connection.isComplete ? 1 : 0.5)
 
             DiscoveryStatusLabel(state: catalog.state)
+
+            Text("For sub-second video, port 8555 (TCP+UDP) must be reachable on your LAN, and go2rtc needs `webrtc.candidates: [\"\(connection.hostTrimmed.isEmpty ? "<server-ip>" : connection.hostTrimmed):8555\"]`.")
+                .font(.caption2)
+                .foregroundStyle(Theme.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(18)
         .glassCard()
     }
 
+    // MARK: Cameras
+
     private var camerasCard: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Cameras")
-                .font(.headline)
-                .foregroundStyle(Theme.textPrimary)
-
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Camera A").font(.caption.weight(.semibold)).foregroundStyle(Theme.textTertiary)
-                field("Display name", text: $config.settings.cameraA.displayName, placeholder: "Owlet")
-                field("go2rtc stream name", text: $config.settings.cameraA.streamName, placeholder: "owlet")
-                if !catalog.names.isEmpty {
-                    StreamChips(streamName: $config.settings.cameraA.streamName, available: catalog.names)
+            HStack {
+                Text("Cameras").font(.headline).foregroundStyle(Theme.textPrimary)
+                Spacer()
+                Button {
+                    config.addCamera(.blank())
+                    Haptics.tap()
+                } label: {
+                    Label("Add", systemImage: "plus").font(.subheadline.weight(.semibold))
                 }
             }
-            Divider().overlay(Theme.hairline)
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Camera B · Fisheye").font(.caption.weight(.semibold)).foregroundStyle(Theme.textTertiary)
-                field("Display name", text: $config.settings.cameraB.displayName, placeholder: "Nursery")
-                field("go2rtc stream name", text: $config.settings.cameraB.streamName, placeholder: "reolink")
-                if !catalog.names.isEmpty {
-                    StreamChips(streamName: $config.settings.cameraB.streamName, available: catalog.names)
+
+            ForEach($config.settings.cameras) { $cam in
+                cameraRow($cam)
+                if cam.id != config.settings.cameras.last?.id {
+                    Divider().overlay(Theme.hairline)
                 }
             }
         }
         .padding(18)
         .glassCard()
+    }
+
+    private func cameraRow(_ cam: Binding<CameraSettings>) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(cam.wrappedValue.displayName.isEmpty ? "Camera" : cam.wrappedValue.displayName)
+                    .font(.caption.weight(.semibold)).foregroundStyle(Theme.textTertiary)
+                Spacer()
+                if config.settings.cameras.count > 1 {
+                    Button {
+                        config.removeCamera(cam.wrappedValue.id)
+                        Haptics.rigid()
+                    } label: {
+                        Image(systemName: "trash").font(.caption).foregroundStyle(Theme.danger)
+                    }
+                }
+            }
+            field("Display name", text: cam.displayName, placeholder: "Nursery")
+            field("Stream name", text: cam.streamName, placeholder: "reolink")
+            if !catalog.names.isEmpty {
+                StreamChips(streamName: cam.streamName, available: catalog.names)
+            }
+            Toggle("Fisheye (dewarp)", isOn: cam.isFisheye).font(.caption)
+        }
     }
 
     private var startButton: some View {
         Button {
+            config.frigatePassword = password
             onDone()
         } label: {
-            Text("Start Monitoring")
-                .frame(maxWidth: .infinity)
+            Text("Start Monitoring").frame(maxWidth: .infinity)
         }
         .glassButton(prominent: true)
         .disabled(!canStart)
         .opacity(canStart ? 1 : 0.5)
     }
 
+    // MARK: Helpers
+
+    private var portBinding: Binding<Int> {
+        Binding(
+            get: { connection.mode == .frigate ? connection.frigatePort : connection.go2rtcPort },
+            set: {
+                if connection.mode == .frigate { config.settings.connection.frigatePort = $0 }
+                else { config.settings.connection.go2rtcPort = $0 }
+            }
+        )
+    }
+
     private func field(_ label: String, text: Binding<String>,
                        placeholder: String, keyboard: UIKeyboardType = .default) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(Theme.textSecondary)
+            Text(label).font(.caption).foregroundStyle(Theme.textSecondary)
             TextField(placeholder, text: text)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .keyboardType(keyboard)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
+                .padding(.horizontal, 12).padding(.vertical, 10)
+                .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.white.opacity(0.06)))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(Theme.hairline, lineWidth: 1))
+        }
+    }
+
+    private func secureField(_ label: String, text: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label).font(.caption).foregroundStyle(Theme.textSecondary)
+            SecureField("••••••••", text: text)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .padding(.horizontal, 12).padding(.vertical, 10)
                 .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(Color.white.opacity(0.06)))
                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)

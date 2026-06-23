@@ -1,40 +1,37 @@
 import Foundation
+import WebRTC
 
 /// Performs the WHEP SDP exchange against go2rtc: POST our offer, get the answer.
 /// Tries the standard `/api/whep` endpoint first, then go2rtc's `/api/webrtc`
-/// alias as a fallback.
-struct WHEPSignaling {
+/// alias as a fallback. go2rtc returns a complete answer (candidates included),
+/// so there's no trickle ICE here.
+final class WHEPSignaling: Signaling {
     /// e.g. `http://192.168.1.50:1984`
     let apiBase: String
+    private var task: URLSessionDataTask?
 
-    enum SignalingError: LocalizedError {
-        case badURL
-        case http(Int)
-        case empty
-        case network(String)
-
-        var errorDescription: String? {
-            switch self {
-            case .badURL: return "Invalid server address."
-            case .http(let code): return "Server returned HTTP \(code)."
-            case .empty: return "Server returned an empty answer."
-            case .network(let msg): return msg
-            }
-        }
+    init(apiBase: String) {
+        self.apiBase = apiBase
     }
 
     func exchange(offer: String,
                   streamName: String,
+                  onRemoteCandidate: @escaping (RTCIceCandidate) -> Void,
                   completion: @escaping (Result<String, Error>) -> Void) {
-        post(path: "/api/whep", offer: offer, src: streamName) { result in
+        post(path: "/api/whep", offer: offer, src: streamName) { [weak self] result in
             switch result {
             case .success:
                 completion(result)
             case .failure:
                 // Fall back to go2rtc's WebRTC alias endpoint.
-                self.post(path: "/api/webrtc", offer: offer, src: streamName, completion: completion)
+                self?.post(path: "/api/webrtc", offer: offer, src: streamName, completion: completion)
             }
         }
+    }
+
+    func cancel() {
+        task?.cancel()
+        task = nil
     }
 
     private func post(path: String,
@@ -56,7 +53,7 @@ struct WHEPSignaling {
         request.httpBody = offer.data(using: .utf8)
         request.timeoutInterval = 10
 
-        URLSession.shared.dataTask(with: request) { data, response, error in
+        let task = URLSession.shared.dataTask(with: request) { data, response, error in
             if let error = error {
                 completion(.failure(SignalingError.network(error.localizedDescription))); return
             }
@@ -72,6 +69,8 @@ struct WHEPSignaling {
                 completion(.failure(SignalingError.empty)); return
             }
             completion(.success(sdp))
-        }.resume()
+        }
+        self.task = task
+        task.resume()
     }
 }

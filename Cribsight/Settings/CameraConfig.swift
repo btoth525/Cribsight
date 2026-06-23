@@ -83,6 +83,16 @@ struct CameraSettings: Codable, Equatable, Identifiable {
             presets: ViewPreset.defaults
         )
     }
+
+    /// Seed cameras for a fresh install (also the migration fallback).
+    static func defaults() -> [CameraSettings] { [owlet(), reolink()] }
+
+    /// A blank camera the user can fill in when adding one by hand.
+    static func blank() -> CameraSettings {
+        CameraSettings(displayName: "Camera", streamName: "", isFisheye: false,
+                       startMuted: false, crySensitivity: 0.6,
+                       dewarp: DewarpParams(), presets: [])
+    }
 }
 
 extension ViewPreset {

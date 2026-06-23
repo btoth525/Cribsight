@@ -79,14 +79,33 @@ final class StreamCatalog: ObservableObject {
 
     var isLoading: Bool { state == .loading }
 
-    func discover(apiBase: String) {
+    /// Discover stream names for the current connection. In Direct mode this hits
+    /// go2rtc's `/api/streams`; in Frigate mode it logs in and reads `/api/config`.
+    func discover(connection: ConnectionSettings, password: String?) {
         state = .loading
-        StreamDiscovery(apiBase: apiBase).loadStreamNames { [weak self] result in
-            DispatchQueue.main.async {
+        switch connection.mode {
+        case .go2rtc:
+            StreamDiscovery(apiBase: connection.apiBase).loadStreamNames { [weak self] result in
+                self?.publish(result)
+            }
+        case .frigate:
+            let client = FrigateClient(apiBase: connection.apiBase)
+            client.login(username: connection.username, password: password ?? "") { [weak self] result in
                 switch result {
-                case .success(let names): self?.state = .loaded(names)
-                case .failure(let error): self?.state = .failed(error.localizedDescription)
+                case .failure(let error):
+                    self?.publish(.failure(error))
+                case .success:
+                    client.streamNames { result2 in self?.publish(result2) }
                 }
+            }
+        }
+    }
+
+    private func publish(_ result: Result<[String], Error>) {
+        DispatchQueue.main.async {
+            switch result {
+            case .success(let names): self.state = .loaded(names)
+            case .failure(let error): self.state = .failed(error.localizedDescription)
             }
         }
     }

@@ -1,234 +1,226 @@
-# Cribsight 👁️
+<div align="center">
 
-A native **SwiftUI** multi-camera baby monitor for iPad/iPhone. As many live
-camera panes as you want, arranged in **custom drag-to-resize layouts**, over
-your **LAN only** (no cloud), with a real-time **Metal fisheye dewarp**, a modern
-**Liquid Glass** UI, listen-in audio with **cry/sound alerts**, and rock-solid
-auto-reconnect for an always-on nursery display.
+<img src="docs/icon.png" alt="Cribsight" width="172">
 
-- **Any number of cameras** — add them, then drag/resize/rearrange the panes
-  into your own layout (side-by-side, stacked, one-bigger, grid, picture-in-pic).
-- **Fisheye cameras** (ceiling-mounted) get a live dewarped panorama with
-  interactive pan / tilt / zoom and snap-to-crib presets.
+# Cribsight
 
-Video comes from your existing **Frigate → go2rtc** setup over **WebRTC**
-(sub-second latency). Connect two ways:
+**A native, LAN-only multi-camera baby monitor for iPad & iPhone.**
 
-- **Direct (go2rtc)** — straight to go2rtc's API port (1984), no login.
-- **Frigate login** — through Frigate's authenticated port (8971) with your
-  username/password; Cribsight logs in and lists your cameras for you.
+Sub-second **WebRTC** video · real-time **Metal** fisheye dewarp · **Liquid Glass** UI · listen-in audio with **cry alerts**. No cloud. No accounts. No subscription.
+
+<br>
+
+![Platform](https://img.shields.io/badge/iOS-18%2B-0A84FF?logo=apple&logoColor=white)
+![SwiftUI](https://img.shields.io/badge/SwiftUI-Swift%205-F05138?logo=swift&logoColor=white)
+![Rendering](https://img.shields.io/badge/Render-Metal-1B998B?logo=apple&logoColor=white)
+![Transport](https://img.shields.io/badge/Video-WebRTC-FF5A5F?logo=webrtc&logoColor=white)
+![Source](https://img.shields.io/badge/Cameras-Frigate%20%2F%20go2rtc-7C5CFC)
+![Network](https://img.shields.io/badge/LAN--only-no%20cloud-30D158)
+
+</div>
+
+---
+
+> Point it at the **Frigate** box you already run, pick the cameras you want, and
+> drag them into whatever layout fits your nursery. The cameras never see extra
+> load — Cribsight rides Frigate's single restream — and the whole thing lives on
+> your local network, so the only thing watching your baby is **you**.
+
+## ✨ Highlights
+
+| | |
+|---|---|
+| 🎥 **Any number of cameras** | Add as many as you want and arrange them in **custom drag-to-resize layouts** — side-by-side, stacked, one-bigger, grid, picture-in-picture. Save and switch between named layouts. |
+| 🌀 **Real-time fisheye dewarp** | A ceiling fisheye is unwrapped on the GPU into **Panorama**, **Zoom** (virtual PTZ), or a stereographic **tiny-planet**. One stream can drive **multiple independent PTZ panes** — decoded once. |
+| ⚡ **Sub-second latency** | Direct **WebRTC** from go2rtc — no HLS buffering, no relay, no round-trip to a server farm. |
+| 🔊 **Listen-in + cry alerts** | Per-pane audio with a live VU meter; a red flash, haptic, and toast when sustained noise crosses a per-camera sensitivity threshold. |
+| 🔐 **Frigate login** | Connect through Frigate's authenticated port with your username/password — credentials live in the **iOS Keychain**, and Cribsight lists your cameras for you. |
+| 🪟 **Liquid Glass UI** | Native `.glassEffect` on iOS 26 with a clean material fallback on iOS 18–25. Dark-first nursery theme + a **Night Mode** that dims and warms the screen. |
+| 🛡️ **Always-on** | Per-pane exponential-backoff reconnect, a frame **watchdog** that recovers silent stalls, keep-awake, and a **kiosk lock** for wall displays. |
+| 📸 **Snapshots** | Grab a still to Photos in a tap. |
 
 ---
 
 ## Requirements
 
-- **Xcode 26** (for the Liquid Glass SDK) on macOS.
-- An iPad/iPhone running **iOS 18+** (Liquid Glass renders natively on iOS 26;
-  on iOS 18–25 it gracefully falls back to a translucent material).
-- A **paid Apple Developer account** to ship to TestFlight (a free personal team
-  works for installing directly on your own device).
-- **go2rtc** (standalone or via Frigate) reachable on your LAN, with both cameras
-  exposed as streams.
+- **Xcode 26** (Liquid Glass SDK) on macOS.
+- iPad/iPhone on **iOS 18+** (Liquid Glass renders natively on iOS 26; falls back to a translucent material on 18–25).
+- A **paid Apple Developer account** for TestFlight (a free personal team works for installing on your own device).
+- **Frigate** (or standalone **go2rtc**) reachable on your LAN, with your cameras exposed as restreams.
 
 ---
 
-## 1. Point it at Frigate (one stream per camera)
+## 1 · Point it at Frigate
 
-If your cameras already live in **Frigate**, you don't need to add any new feeds
-or pull a second stream off the cameras. Frigate bundles **go2rtc**, which keeps
-a *single* connection to each camera and fans it out to detection, recording, and
-any live viewer — Cribsight included. So Cribsight just becomes one more consumer
-of the restream; the cameras never see extra load.
+Your cameras already live in **Frigate**, which bundles **go2rtc** and keeps a
+*single* connection to each camera — fanning it out to detection, recording, and
+any live viewer. Cribsight just becomes one more consumer of that restream, so
+**the cameras never see extra load.**
 
-**a) Make sure each camera is in Frigate's `go2rtc:` restream section.** This is
-what gives it a reusable stream name (and is also how Frigate avoids hammering the
-camera). In your Frigate `config.yml`:
+**a) Put each camera in Frigate's `go2rtc:` restream section** (this is what gives
+it a reusable stream name and what lets detect/record run off the restream
+instead of hitting the camera twice):
 
 ```yaml
 go2rtc:
   streams:
-    owlet:
+    nursery:
       - rtsp://user:pass@192.168.1.21:554/h264Preview_01_main
-    reolink:
+    playroom:
       - rtsp://user:pass@192.168.1.22:554/h264Preview_01_main
   webrtc:
     candidates:
-      - 192.168.1.50:8555   # <-- your Frigate box's LAN IP, go2rtc WebRTC port
+      - 192.168.1.50:8555      # ← your Frigate box's LAN IP + go2rtc WebRTC port
 
 cameras:
   nursery:
     ffmpeg:
       inputs:
-        - path: rtsp://127.0.0.1:8554/reolink   # detect/record off the restream,
-          roles: [detect, record]                # not a 2nd pull from the camera
+        - path: rtsp://127.0.0.1:8554/nursery   # detect/record off the restream,
+          roles: [detect, record]               # not a 2nd pull from the camera
 ```
 
-**b) Expose the go2rtc API port (1984).** Frigate doesn't publish it by default.
-Add it to your Frigate container's ports so Cribsight can reach the WHEP endpoint:
+**b) Make the WebRTC media path reachable.** WebRTC carries video over port
+**8555 (TCP + UDP)** — make sure that's open on the LAN and that
+`webrtc.candidates` lists your Frigate box's IP. This is the single most common
+"stuck on Connecting…" cause.
 
-```yaml
-# docker-compose.yml (Frigate service)
-ports:
-  - "1984:1984"   # go2rtc API / WHEP  ← add this
-  - "8555:8555/tcp"
-  - "8555:8555/udp"
-```
+**c) Pick how Cribsight connects** — two modes, choose in onboarding:
 
-That's it on the server side. Cribsight talks to
-`http://<frigate-ip>:1984/api/whep?src=<stream>` and reuses the existing restream.
+| Mode | Port | Auth | Expose extra ports? |
+|---|---|---|---|
+| **Frigate login** *(recommended)* | `8971` | Your Frigate user/pass | No — `8971` already serves the UI |
+| **Direct (go2rtc)** | `1984` | None (LAN-trusted) | Add `- "1984:1984"` to the Frigate container |
 
-> Standalone go2rtc (no Frigate) works exactly the same — just put your cameras
-> under `streams:` and set `webrtc.candidates`.
+> Standalone go2rtc (no Frigate) works the same — put cameras under `streams:`,
+> set `webrtc.candidates`, and use **Direct** mode against port `1984`.
 
-## 2. Open & sign in Xcode
+---
+
+## 2 · Open in Xcode
 
 ```bash
 open Cribsight.xcodeproj
 ```
 
-(If anything looks off, you can regenerate the project with
-`brew install xcodegen && xcodegen generate`.)
+1. Let Xcode resolve the Swift Package (`stasel/WebRTC`) — *File ▸ Packages ▸ Resolve Package Versions* if it doesn't start on its own.
+2. **Cribsight** target ▸ **Signing & Capabilities** → set your **Team** and a unique **Bundle Identifier** (e.g. `com.yourname.cribsight`).
+3. If you have GPU shaders prompting it, install the **Metal Toolchain** (Settings ▸ Components, or `xcodebuild -downloadComponent MetalToolchain`).
+4. Pick your iPad and **⌘R**.
 
-Then:
-
-1. Let Xcode resolve the Swift Package (`stasel/WebRTC`). If it doesn't start
-   automatically: **File ▸ Packages ▸ Resolve Package Versions**.
-2. Select the **Cribsight** target ▸ **Signing & Capabilities**:
-   - Set your **Team**.
-   - Change the **Bundle Identifier** to something unique under your team
-     (e.g. `com.yourname.cribsight`).
-3. Pick your iPad as the run destination and **⌘R**.
-
-## 3. First run
-
-On first launch the onboarding screen asks you to:
-
-1. Pick a **connection mode**:
-   - **Direct (go2rtc)** — enter host + port `1984`.
-   - **Frigate login** — enter host + port `8971`, plus your Frigate
-     **username/password** (stored in the iOS Keychain, never on disk).
-2. Tap **Connect & find cameras** — Cribsight reaches your server (logging in if
-   needed) and lists every stream it finds. Tap a chip to fill a camera's stream
-   name (no typing).
-3. Add as many **cameras** as you like, name them, and flag any **fisheye** ones.
-
-Tap **Start Monitoring**. Panes should go **Live** in well under a second.
-
-### Arranging your layout
-
-Tap the **grid button** in the bottom control bar to enter layout mode, then:
-
-- **Drag** a pane to move it, drag the **corner handle** to resize, tap **✕** to
-  remove it. Edits snap to a grid and save automatically.
-- Use the **presets** (side-by-side, stacked, one-bigger, grid, picture-in-pic)
-  as a starting point, or **Add camera** to drop another pane in.
-- Save multiple named layouts and switch between them in **Settings ▸ Layouts**.
-
-Everything (cameras, layouts, fisheye calibration) is editable later from the
-**gear ▸ Settings** sheet.
+> Regenerate the project anytime with `brew install xcodegen && xcodegen generate`.
 
 ---
 
-## Features
+## 3 · First run
 
-- **Dual live panes**, adaptive split (side-by-side in landscape, stacked in
-  portrait). Tap the expand button to **fullscreen** a camera; **swap** panes.
-- **Interactive fisheye**: drag to pan/tilt, pinch to zoom, reset button, and a
-  glass **preset picker** (Panorama / Crib A / Crib B / Wide).
-- **Listen-in audio** per pane with a mute toggle and an always-on **VU meter**.
-- **Cry / sound alerts**: a red flash, haptic, and toast when sustained noise
-  crosses a per-camera sensitivity threshold.
-- **Liquid Glass** controls, dark-first nursery theme, and a **Night Mode** that
-  dims + warms the screen (manual or scheduled).
-- **Snapshot** to Photos. **Kiosk lock** (hides controls; long-press to unlock).
-- **Never disconnects**: per-pane exponential-backoff reconnect plus a frame
-  **watchdog** that recovers silent stalls, keep-awake, and clean
-  background/foreground handling.
+1. Pick a **connection mode** and enter the host:
+   - **Frigate login** → host + port `8971` + your Frigate **username/password** (saved to the Keychain).
+   - **Direct (go2rtc)** → host + port `1984`.
+2. Tap **Connect & find cameras** — Cribsight reaches your server (logging in if needed) and lists every stream. Tap a chip to assign one to a pane — no typing, no typos.
+3. Add your **cameras**, name them, and flag any **fisheye** ones.
+4. **Start Monitoring** — panes go **Live** in well under a second.
 
-### Fisheye superpowers
+### Arranging your layout
+
+Tap the **grid button** in the control bar to enter layout mode:
+
+- **Drag** to move a pane, drag the **corner handle** to resize, tap **✕** to remove. Edits snap to a grid and save automatically.
+- Start from a **preset** (side-by-side · stacked · one-bigger · grid · picture-in-picture) or **Add camera** to drop in another pane.
+- For a ceiling fisheye, tap **Split fisheye** to instantly get two independent PTZ views (e.g. one per crib) from the one stream.
+- Keep multiple named layouts and switch in **Settings ▸ Layouts**.
+
+---
+
+## Fisheye superpowers
 
 A single ceiling fisheye can drive **multiple panes at once**, each its own
-virtual camera. In layout mode, tap **Split fisheye** to instantly get two
-side-by-side PTZ views (e.g. one per crib) from the one stream — decoded once, no
-extra load. Add more panes of the same camera and aim each independently
-(drag to pan/tilt, pinch to zoom). Each pane remembers its framing.
+virtual camera, decoded **once**. Aim each pane independently — drag to pan/tilt,
+pinch to zoom — and it remembers its framing.
 
-Projection modes (per pane, from the preset bar): **Panorama** (equirectangular
-strip), **Zoom** (rectilinear virtual-PTZ), and **Planet** (a stereographic
-"tiny planet" of the whole room). Edges are anti-aliased so the circular boundary
-stays clean.
+Projection modes (per pane, from the preset bar):
 
-To tune the lens, open the camera in **Settings ▸ Cameras ▸ (your fisheye)** and
-adjust:
+- **Panorama** — equirectangular strip across the room.
+- **Zoom** — rectilinear virtual-PTZ for crib close-ups.
+- **Planet** — a stereographic "tiny planet" of the whole room.
 
-- **Center X/Y** and **Radius** so the circular image fills the dewarp.
+Tune the lens in **Settings ▸ Cameras ▸ (your fisheye)**:
+
+- **Center X/Y** + **Radius** so the circular image fills the dewarp.
 - **Lens FOV°** to match your lens (Reolink fisheye ≈ 180–200°).
-- **Pano top/bottom°** to frame the cribs in panorama mode.
+- **Pano top/bottom°** to frame the cribs.
 - **Flip** if the image is mirrored.
 
-Changes apply when you close Settings. (If go2rtc only gives you the raw circular
-fisheye — which is normal — this is where you dial in the un-warp.)
+Changes apply when you close Settings.
 
 ---
 
 ## Ship to TestFlight
 
-1. Set the run destination to **Any iOS Device (arm64)**.
-2. **Product ▸ Archive**.
-3. In the Organizer: **Distribute App ▸ App Store Connect ▸ Upload**.
-4. In App Store Connect, add the build to **TestFlight** and install it on the
-   nursery iPad via the TestFlight app.
+1. Run destination → **Any iOS Device (arm64)**, then **Product ▸ Archive**.
+2. Organizer → **Distribute App ▸ App Store Connect ▸ Upload**. Uncheck *"Upload your app's symbols"* to skip the harmless WebRTC dSYM warning (it's a precompiled framework with no dSYM).
+3. Add the build to **TestFlight** and install on the nursery iPad.
 
-`Info.plist` already sets `ITSAppUsesNonExemptEncryption = NO`, so you won't be
-prompted about export compliance.
+The project ships a `PrivacyInfo.xcprivacy` (declares only `UserDefaults`; no
+tracking, no data collected) and sets `ITSAppUsesNonExemptEncryption = NO`, so
+there's no export-compliance prompt and no privacy-manifest warning.
 
 ### Kiosk mode
 
-For a locked-down wall display, use iOS **Guided Access**
-(Settings ▸ Accessibility ▸ Guided Access), then triple-click the side button in
-the app. The in-app **lock** button also hides all controls for a clean,
-full-bleed view.
+For a locked-down wall display, use iOS **Guided Access** (Settings ▸
+Accessibility ▸ Guided Access) and triple-click the side button. The in-app
+**lock** button also hides every control for a clean, full-bleed view.
 
 ---
 
 ## Architecture
 
 ```
-go2rtc (LAN) --WHEP/WebRTC--> WebRTCClient (per pane)
-   audio ─→ AVAudioSession(.playback) + getStats audioLevel → VU + CryDetector
-   video ─→ FrameSink (CVPixelBuffer) ─→ DewarpRenderer (Metal) ─→ MTKView
-                                              ↑ pan/tilt/zoom uniforms ← gestures
+Frigate :8971 (auth) ──login──► JWT ──► iOS Keychain
+   │ go2rtc restream — ONE pull per physical camera
+   ▼
+WebRTC  (WHEP or WebSocket signaling · media over :8555)
+   ▼
+CameraSource ── decoded once per camera ───────────────┐
+   │                                                    │  fisheye → N virtual PTZ panes
+   ├─ video ─► FrameSink (CVPixelBuffer) ─► DewarpRenderer (Metal) ─► MTKView  (per pane)
+   │                                              ▲ pan/tilt/zoom ◄─ gestures
+   └─ audio ─► AVAudioSession(.playback) ─► VU meter + CryDetector
 ```
 
 | Area | Files |
 |---|---|
 | App / shell | `App/CribsightApp.swift`, `App/RootView.swift` |
-| Monitor UI | `Monitor/MonitorView.swift`, `CameraPaneView.swift`, `ControlBar.swift`, `PresetPicker.swift`, `AlertOverlay.swift` |
-| View models | `Monitor/MonitorViewModel.swift`, `PaneViewModel.swift` |
-| WebRTC | `WebRTC/WebRTCClient.swift`, `WHEPSignaling.swift`, `ReconnectController.swift`, `StatsMonitor.swift`, `RTCFactory.swift` |
+| Monitor UI | `Monitor/MonitorView.swift`, `CameraPaneView.swift`, `ControlBar.swift`, `LayoutEditorBar.swift`, `PresetPicker.swift`, `AlertOverlay.swift` |
+| Layout engine | `Monitor/LayoutCanvas.swift`, `Settings/Layout.swift` |
+| View models / sources | `Monitor/MonitorViewModel.swift`, `PaneViewModel.swift`, `CameraSource.swift` |
+| Connection / WebRTC | `WebRTC/WebRTCClient.swift`, `Signaling.swift`, `WHEPSignaling.swift`, `WebSocketSignaling.swift`, `FrigateClient.swift`, `ReconnectController.swift`, `StatsMonitor.swift`, `RTCFactory.swift` |
 | Rendering | `Rendering/Shaders.metal`, `DewarpRenderer.swift`, `FrameSink.swift`, `MetalDewarpView.swift`, `DewarpUniforms.swift` |
 | Audio / capture | `Audio/AudioController.swift`, `CryDetector.swift`, `Capture/SnapshotService.swift` |
-| Settings | `Settings/AppConfig.swift`, `CameraConfig.swift`, `SettingsView.swift`, `OnboardingView.swift` |
+| Settings / config | `Settings/AppConfig.swift`, `CameraConfig.swift`, `ConnectionSettings.swift`, `Keychain.swift`, `SettingsView.swift`, `CameraSettingsView.swift`, `OnboardingView.swift`, `StreamDiscovery.swift`, `StreamChips.swift` |
 | Design | `Design/Theme.swift`, `GlassSurface.swift`, `GlassControls.swift`, `NightModeOverlay.swift`, `Haptics.swift` |
 
-Dependency: [`stasel/WebRTC`](https://github.com/stasel/WebRTC) via Swift Package
-Manager (declared in the project and in `project.yml`).
+Dependency: [`stasel/WebRTC`](https://github.com/stasel/WebRTC) via Swift Package Manager.
 
 ---
 
 ## Troubleshooting
 
-- **Panes stay "Connecting…"** — almost always the go2rtc `webrtc.candidates`
-  step above. Confirm the iPad and server are on the same subnet and the IP/port
-  are right.
-- **No video but "Live"** — check the stream name matches go2rtc exactly.
-- **HTTP blocked** — the app allows local-network cleartext via
-  `NSAllowsLocalNetworking`; this only works for LAN addresses (as intended).
-- **Package won't resolve** — File ▸ Packages ▸ Reset Package Caches, then
-  Resolve.
-- **Fisheye looks wrong** — tune Center/Radius/Lens FOV in Settings.
+| Symptom | Fix |
+|---|---|
+| Panes stuck on **"Connecting…"** | The `webrtc.candidates` / port **8555** step. Confirm the iPad and Frigate are on the same subnet and the candidate IP is right. |
+| **"Live" but no video** | Stream name must match go2rtc exactly — use the discovered chips instead of typing. |
+| **Login fails** (Frigate mode) | Check the port is `8971` (not the UI's `5000`) and the user/pass are right. On a self-signed cert, leave HTTPS off and use plain HTTP on the LAN. |
+| **HTTP blocked** | The app allows local-network cleartext via `NSAllowsLocalNetworking` — LAN addresses only, by design. |
+| **Package won't resolve** | File ▸ Packages ▸ Reset Package Caches, then Resolve. |
+| **Fisheye looks wrong** | Tune Center / Radius / Lens FOV in Settings ▸ Cameras. |
 
-> Built in a headless CI environment, so the project ships as source +
-> a ready-to-open `.xcodeproj`. The final compile, signing, and TestFlight upload
-> happen on your Mac. The Liquid Glass calls are guarded by availability with a
-> material fallback, so the project builds on the full iOS 18+ range.
+---
+
+<div align="center">
+
+**Built for the one screen in the house that should never go dark.** 👁️
+
+*LAN-only · no cloud · no accounts*
+
+</div>

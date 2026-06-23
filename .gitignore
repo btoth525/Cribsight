@@ -1,0 +1,32 @@
+# macOS
+.DS_Store
+
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xcscmblueprint
+*.xccheckout
+*.moved-aside
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+
+# Swift Package Manager
+.swiftpm/
+.build/
+Packages/
+Package.resolved
+
+# Xcode package resolution inside the project (regenerated on resolve)
+Cribsight.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+Cribsight.xcodeproj/xcuserdata/
+Cribsight.xcodeproj/project.xcworkspace/xcuserdata/
+
+# Misc
+*.ipa
+*.dSYM.zip
+*.dSYM

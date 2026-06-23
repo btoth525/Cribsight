@@ -1,0 +1,84 @@
+import Foundation
+import WebRTC
+
+/// Decoded health/audio snapshot for a pane, derived from getStats().
+struct PaneStats: Equatable {
+    var audioLevel: Double = 0     // 0…1, post jitter-buffer
+    var fps: Double = 0
+    var bitrateKbps: Double = 0
+    var width: Int = 0
+    var height: Int = 0
+
+    var resolutionText: String {
+        width > 0 && height > 0 ? "\(width)×\(height)" : "—"
+    }
+}
+
+/// Polls a WebRTCClient's statistics and publishes a decoded `PaneStats`.
+/// Drives both the VU meter and cry detection.
+final class StatsMonitor {
+    private weak var client: WebRTCClient?
+    private var timer: Timer?
+
+    var onUpdate: ((PaneStats) -> Void)?
+
+    private var lastBytes: Double = 0
+    private var lastTimestampUs: Double = 0
+
+    init(client: WebRTCClient) {
+        self.client = client
+    }
+
+    func start(interval: TimeInterval = 0.2) {
+        stop()
+        let t = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
+            self?.poll()
+        }
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
+    }
+
+    func stop() {
+        timer?.invalidate()
+        timer = nil
+        lastBytes = 0
+        lastTimestampUs = 0
+    }
+
+    private func poll() {
+        client?.statistics { [weak self] report in
+            guard let self = self else { return }
+            var stats = PaneStats()
+
+            for (_, s) in report.statistics where s.type == "inbound-rtp" {
+                let kind = (s.values["kind"] as? String) ?? (s.values["mediaType"] as? String)
+                if kind == "audio" {
+                    if let level = s.values["audioLevel"] as? Double {
+                        stats.audioLevel = level
+                    }
+                } else if kind == "video" {
+                    if let fps = s.values["framesPerSecond"] as? Double { stats.fps = fps }
+                    if let w = s.values["frameWidth"] as? Int { stats.width = w }
+                    if let h = s.values["frameHeight"] as? Int { stats.height = h }
+
+                    if let bytes = s.values["bytesReceived"] as? Double {
+                        let nowUs = report.timestamp_us
+                        if self.lastTimestampUs > 0, nowUs > self.lastTimestampUs {
+                            let deltaBytes = max(0, bytes - self.lastBytes)
+                            let deltaSec = (nowUs - self.lastTimestampUs) / 1_000_000.0
+                            if deltaSec > 0 {
+                                stats.bitrateKbps = (deltaBytes * 8.0 / 1000.0) / deltaSec
+                            }
+                        }
+                        self.lastBytes = bytes
+                        self.lastTimestampUs = nowUs
+                    }
+                }
+            }
+
+            DispatchQueue.main.async {
+                self.onUpdate?(stats)
+            }
+        }
+    }
+}

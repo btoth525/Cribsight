@@ -1,0 +1,45 @@
+# XcodeGen spec — regenerate the Xcode project with:  xcodegen generate
+# (brew install xcodegen).  A committed Cribsight.xcodeproj is also provided so
+# you can just open it; regenerate with this file if anything looks off.
+
+name: Cribsight
+options:
+  bundleIdPrefix: com.cribsight
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    SWIFT_STRICT_CONCURRENCY: minimal
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    TARGETED_DEVICE_FAMILY: "1,2"
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    GENERATE_INFOPLIST_FILE: NO
+    INFOPLIST_FILE: Cribsight/Resources/Info.plist
+    ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+    ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+
+packages:
+  WebRTC:
+    url: https://github.com/stasel/WebRTC.git
+    minVersion: "120.0.0"
+    maxVersion: "200.0.0"
+
+targets:
+  Cribsight:
+    type: application
+    platform: iOS
+    sources:
+      - path: Cribsight
+    dependencies:
+      - package: WebRTC
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.cribsight.app
+        PRODUCT_NAME: Cribsight

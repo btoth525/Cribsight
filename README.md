@@ -26,27 +26,53 @@ Video comes from your existing **Frigate → go2rtc** setup over **WebRTC/WHEP**
 
 ---
 
-## 1. Prepare go2rtc (one-time, on the server)
+## 1. Point it at Frigate (one stream per camera)
 
-WebRTC needs a reachable ICE candidate on your LAN. In your go2rtc config add
-your server's LAN IP with the WebRTC port (default **8555**):
+If your cameras already live in **Frigate**, you don't need to add any new feeds
+or pull a second stream off the cameras. Frigate bundles **go2rtc**, which keeps
+a *single* connection to each camera and fans it out to detection, recording, and
+any live viewer — Cribsight included. So Cribsight just becomes one more consumer
+of the restream; the cameras never see extra load.
+
+**a) Make sure each camera is in Frigate's `go2rtc:` restream section.** This is
+what gives it a reusable stream name (and is also how Frigate avoids hammering the
+camera). In your Frigate `config.yml`:
 
 ```yaml
-webrtc:
-  candidates:
-    - 192.168.1.50:8555   # <-- your go2rtc server's LAN IP
+go2rtc:
+  streams:
+    owlet:
+      - rtsp://user:pass@192.168.1.21:554/h264Preview_01_main
+    reolink:
+      - rtsp://user:pass@192.168.1.22:554/h264Preview_01_main
+  webrtc:
+    candidates:
+      - 192.168.1.50:8555   # <-- your Frigate box's LAN IP, go2rtc WebRTC port
+
+cameras:
+  nursery:
+    ffmpeg:
+      inputs:
+        - path: rtsp://127.0.0.1:8554/reolink   # detect/record off the restream,
+          roles: [detect, record]                # not a 2nd pull from the camera
 ```
 
-Make sure each camera has a stream name, e.g.:
+**b) Expose the go2rtc API port (1984).** Frigate doesn't publish it by default.
+Add it to your Frigate container's ports so Cribsight can reach the WHEP endpoint:
 
 ```yaml
-streams:
-  owlet: ...
-  reolink: ...
+# docker-compose.yml (Frigate service)
+ports:
+  - "1984:1984"   # go2rtc API / WHEP  ← add this
+  - "8555:8555/tcp"
+  - "8555:8555/udp"
 ```
 
-The go2rtc API is on port **1984** by default. Cribsight talks to
-`http://<server>:1984/api/whep?src=<stream>`.
+That's it on the server side. Cribsight talks to
+`http://<frigate-ip>:1984/api/whep?src=<stream>` and reuses the existing restream.
+
+> Standalone go2rtc (no Frigate) works exactly the same — just put your cameras
+> under `streams:` and set `webrtc.candidates`.
 
 ## 2. Open & sign in Xcode
 
@@ -71,12 +97,15 @@ Then:
 
 On first launch the onboarding screen asks for:
 
-- **Server IP / host** and **port** (1984)
-- **Camera A** display name + go2rtc **stream name** (e.g. `owlet`)
-- **Camera B** display name + go2rtc **stream name** (e.g. `reolink`)
+- **Server IP / host** and **port** (your Frigate box, `1984`)
+- Tap **Connect & find cameras** — Cribsight queries go2rtc and lists every
+  stream it finds. Tap a chip to assign one to **Camera A** and one to
+  **Camera B** (no need to type the names by hand).
+- Set each pane's **display name**.
 
 Tap **Start Monitoring**. Both panes should go **Live** in well under a second.
-You can change any of this later from the **gear ▸ Settings** sheet.
+You can re-run discovery and change any of this later from the **gear ▸
+Settings** sheet.
 
 ---
 

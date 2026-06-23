@@ -4,12 +4,17 @@ import UIKit
 /// First-run setup: capture the go2rtc server and the two stream names.
 struct OnboardingView: View {
     @ObservedObject var config: AppConfig
+    @StateObject private var catalog = StreamCatalog()
     var onDone: () -> Void
 
     private var canStart: Bool {
         !config.settings.serverHost.trimmingCharacters(in: .whitespaces).isEmpty
             && !config.settings.cameraA.streamName.isEmpty
             && !config.settings.cameraB.streamName.isEmpty
+    }
+
+    private var serverHostEmpty: Bool {
+        config.settings.serverHost.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
     var body: some View {
@@ -62,9 +67,13 @@ struct OnboardingView: View {
 
     private var serverCard: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("go2rtc Server")
+            Text("Frigate / go2rtc server")
                 .font(.headline)
                 .foregroundStyle(Theme.textPrimary)
+            Text("Point Cribsight at your existing Frigate box. It already keeps one connection to each camera, so nothing extra hits the cameras.")
+                .font(.caption)
+                .foregroundStyle(Theme.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
             field("Server IP / host", text: $config.settings.serverHost,
                   placeholder: "192.168.1.50", keyboard: .URL)
             HStack {
@@ -77,6 +86,26 @@ struct OnboardingView: View {
                     .multilineTextAlignment(.trailing)
                     .frame(width: 100)
             }
+
+            Button {
+                Haptics.tap()
+                catalog.discover(apiBase: config.apiBase())
+            } label: {
+                HStack(spacing: 8) {
+                    if catalog.isLoading {
+                        ProgressView().tint(Theme.textPrimary)
+                    } else {
+                        Image(systemName: "antenna.radiowaves.left.and.right")
+                    }
+                    Text(catalog.isLoading ? "Connecting…" : "Connect & find cameras")
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .glassButton()
+            .disabled(serverHostEmpty || catalog.isLoading)
+            .opacity(serverHostEmpty ? 0.5 : 1)
+
+            DiscoveryStatusLabel(state: catalog.state)
         }
         .padding(18)
         .glassCard()
@@ -92,12 +121,18 @@ struct OnboardingView: View {
                 Text("Camera A").font(.caption.weight(.semibold)).foregroundStyle(Theme.textTertiary)
                 field("Display name", text: $config.settings.cameraA.displayName, placeholder: "Owlet")
                 field("go2rtc stream name", text: $config.settings.cameraA.streamName, placeholder: "owlet")
+                if !catalog.names.isEmpty {
+                    StreamChips(streamName: $config.settings.cameraA.streamName, available: catalog.names)
+                }
             }
             Divider().overlay(Theme.hairline)
             VStack(alignment: .leading, spacing: 10) {
                 Text("Camera B · Fisheye").font(.caption.weight(.semibold)).foregroundStyle(Theme.textTertiary)
                 field("Display name", text: $config.settings.cameraB.displayName, placeholder: "Nursery")
                 field("go2rtc stream name", text: $config.settings.cameraB.streamName, placeholder: "reolink")
+                if !catalog.names.isEmpty {
+                    StreamChips(streamName: $config.settings.cameraB.streamName, available: catalog.names)
+                }
             }
         }
         .padding(18)

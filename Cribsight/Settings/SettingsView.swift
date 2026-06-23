@@ -4,6 +4,7 @@ import SwiftUI
 /// changes when the sheet is dismissed.
 struct SettingsView: View {
     @ObservedObject var config: AppConfig
+    @StateObject private var catalog = StreamCatalog()
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -54,10 +55,29 @@ struct SettingsView: View {
                     .frame(width: 90)
             }
             Toggle("Use HTTPS / WSS", isOn: $config.settings.useTLS)
+
+            Button {
+                Haptics.tap()
+                catalog.discover(apiBase: config.apiBase())
+            } label: {
+                HStack {
+                    if catalog.isLoading {
+                        ProgressView()
+                    } else {
+                        Image(systemName: "antenna.radiowaves.left.and.right")
+                    }
+                    Text(catalog.isLoading ? "Connecting…" : "Connect & find cameras")
+                }
+            }
+            .disabled(config.settings.serverHost.trimmingCharacters(in: .whitespaces).isEmpty || catalog.isLoading)
+
+            if catalog.state != .idle {
+                DiscoveryStatusLabel(state: catalog.state)
+            }
         } header: {
-            Text("go2rtc Server")
+            Text("Frigate / go2rtc Server")
         } footer: {
-            Text("The go2rtc API is normally on port 1984. For WebRTC on your LAN, set `webrtc.candidates: [\"\(config.settings.serverHost.isEmpty ? "<server-ip>" : config.settings.serverHost):8555\"]` in go2rtc.")
+            Text("Point this at your Frigate box (go2rtc API, normally port 1984) — one connection per camera is reused for every viewer. For WebRTC on your LAN, set `webrtc.candidates: [\"\(config.settings.serverHost.isEmpty ? "<server-ip>" : config.settings.serverHost):8555\"]` in the go2rtc config.")
         }
     }
 
@@ -76,6 +96,9 @@ struct SettingsView: View {
                     .multilineTextAlignment(.trailing)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+            }
+            if !catalog.names.isEmpty {
+                StreamChips(streamName: binding(keyPath, \.streamName), available: catalog.names)
             }
             Toggle("Start muted", isOn: binding(keyPath, \.startMuted))
             VStack(alignment: .leading) {

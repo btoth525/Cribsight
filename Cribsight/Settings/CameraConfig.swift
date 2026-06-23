@@ -5,9 +5,16 @@ import CoreGraphics
 enum FisheyeProjectionMode: Int, Codable, CaseIterable, Identifiable {
     case panorama      // equirectangular strip — the ceiling-down default
     case perspective   // virtual pinhole camera (rectilinear), for zooming on a crib
+    case littlePlanet  // stereographic "tiny planet" of the whole room
 
     var id: Int { rawValue }
-    var label: String { self == .panorama ? "Panorama" : "Zoom" }
+    var label: String {
+        switch self {
+        case .panorama: return "Panorama"
+        case .perspective: return "Zoom"
+        case .littlePlanet: return "Planet"
+        }
+    }
 }
 
 /// Live look-around state for the virtual camera (also stored inside presets).
@@ -108,7 +115,9 @@ extension ViewPreset {
                        orientation: ViewOrientation(pan: 0.6, tilt: 0.5, zoom: 1.2)),
             ViewPreset(name: "Wide", systemImage: "arrow.up.left.and.arrow.down.right",
                        mode: .perspective,
-                       orientation: ViewOrientation(pan: 0, tilt: 0.3, zoom: 0.75))
+                       orientation: ViewOrientation(pan: 0, tilt: 0.3, zoom: 0.75)),
+            ViewPreset(name: "Planet", systemImage: "globe.americas",
+                       mode: .littlePlanet, orientation: .identity)
         ]
     }
 }

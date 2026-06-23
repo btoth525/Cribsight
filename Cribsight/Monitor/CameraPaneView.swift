@@ -194,7 +194,7 @@ struct CameraPaneView: View {
                 lastDrag = value.translation
                 pane.applyDrag(dx: dx * 2.6, dy: dy * 2.0)
             }
-            .onEnded { _ in lastDrag = .zero }
+            .onEnded { _ in lastDrag = .zero; pane.endInteraction() }
     }
 
     private func magnifyGesture() -> some Gesture {
@@ -204,6 +204,6 @@ struct CameraPaneView: View {
                 lastZoom = value.magnification
                 pane.applyZoom(Float(delta))
             }
-            .onEnded { _ in lastZoom = 1 }
+            .onEnded { _ in lastZoom = 1; pane.endInteraction() }
     }
 }

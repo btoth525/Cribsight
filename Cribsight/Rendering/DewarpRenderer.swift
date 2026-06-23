@@ -9,8 +9,10 @@ import WebRTC
 /// shader. The `uniforms` are updated by the view model as gestures change.
 final class DewarpRenderer: NSObject, MTKViewDelegate {
 
-    /// Attach this to the WebRTC video track to receive frames.
-    let sink = FrameSink()
+    /// The frame source, owned by the `CameraSource`. Several renderers (one per
+    /// pane) can read the same sink, so one fisheye stream drives many aimed
+    /// dewarp views without extra decoding or network connections.
+    let sink: FrameSink
 
     /// Updated on the main thread by the pane view model.
     var uniforms = DewarpUniformsData()
@@ -20,11 +22,12 @@ final class DewarpRenderer: NSObject, MTKViewDelegate {
     private var pipeline: MTLRenderPipelineState?
     private var textureCache: CVMetalTextureCache?
 
-    override init() {
+    init(sink: FrameSink) {
         guard let device = MTLCreateSystemDefaultDevice(),
               let queue = device.makeCommandQueue() else {
             preconditionFailure("Metal is required but unavailable on this device.")
         }
+        self.sink = sink
         self.device = device
         self.queue = queue
         super.init()

@@ -1,130 +1,52 @@
 import Foundation
 import SwiftUI
 import UIKit
+import Combine
 
-/// Drives a single camera pane: owns the WebRTC client, the Metal renderer,
-/// stats, reconnection and cry detection, and publishes UI state.
+/// Drives a single layout slot: its own Metal renderer + fisheye framing, sharing
+/// the underlying `CameraSource` (connection/audio/stats) with any other panes of
+/// the same camera. So one ceiling fisheye can power several panes, each aimed at
+/// a different crib.
 final class PaneViewModel: ObservableObject, Identifiable {
+    /// The layout slot id (a camera may back several slots).
     let id: UUID
 
-    @Published var camera: CameraSettings
-    @Published private(set) var connectionState: PaneConnectionState = .idle
-    @Published private(set) var stats = PaneStats()
-    @Published private(set) var isMuted: Bool
-    @Published private(set) var cryActive = false
+    let source: CameraSource
+    /// Owned here so it survives SwiftUI view rebuilds; reads the shared sink.
+    let renderer: DewarpRenderer
+
     @Published var orientation: ViewOrientation
     @Published var mode: FisheyeProjectionMode
 
-    /// Owned here so it survives SwiftUI view rebuilds.
-    let renderer = DewarpRenderer()
+    /// Persist the per-slot framing (slot id, view) after the user reaims.
+    var onAimChanged: ((UUID, SlotView) -> Void)?
 
-    /// Called (with the camera display name) when a cry/sound alert fires.
-    var onCry: ((String) -> Void)?
+    private var cancellable: AnyCancellable?
 
-    private var client: WebRTCClient?
-    private var reconnect: ReconnectController?
-    private var statsMonitor: StatsMonitor?
-    private let cryDetector = CryDetector()
+    // Forwarded source state (so the view only needs to observe the pane).
+    var camera: CameraSettings { source.camera }
+    var connectionState: PaneConnectionState { source.connectionState }
+    var stats: PaneStats { source.stats }
+    var isMuted: Bool { source.isMuted }
+    var cryActive: Bool { source.cryActive }
 
-    private var connection: ConnectionSettings
-    private let tokenProvider: () -> String?
-    private var cryAlertsEnabled: Bool
-    private var cryChimeEnabled: Bool
-    private(set) var isRunning = false
-
-    init(camera: CameraSettings,
-         connection: ConnectionSettings,
-         tokenProvider: @escaping () -> String?,
-         cryAlertsEnabled: Bool,
-         cryChimeEnabled: Bool) {
-        self.id = camera.id
-        self.camera = camera
-        self.isMuted = camera.startMuted
-        self.orientation = camera.dewarp.defaultOrientation
-        self.mode = camera.dewarp.mode
-        self.connection = connection
-        self.tokenProvider = tokenProvider
-        self.cryAlertsEnabled = cryAlertsEnabled
-        self.cryChimeEnabled = cryChimeEnabled
-        self.cryDetector.sensitivity = camera.crySensitivity
+    init(slotID: UUID, source: CameraSource, initialView: SlotView?) {
+        self.id = slotID
+        self.source = source
+        self.renderer = DewarpRenderer(sink: source.sink)
+        let cam = source.camera
+        self.orientation = initialView?.orientation ?? cam.dewarp.defaultOrientation
+        self.mode = initialView?.mode ?? cam.dewarp.mode
         updateUniforms()
-
-        cryDetector.onActiveChanged = { [weak self] active in
-            guard let self = self else { return }
-            DispatchQueue.main.async {
-                self.cryActive = active
-                if active {
-                    Haptics.alert()
-                    if self.cryChimeEnabled { AudioController.shared.playChime() }
-                    self.onCry?(self.camera.displayName)
-                }
-            }
+        // Re-publish source changes (connection/stats/mute/cry) as our own.
+        cancellable = source.objectWillChange.sink { [weak self] _ in
+            self?.objectWillChange.send()
         }
-    }
-
-    // MARK: Lifecycle
-
-    func start() {
-        guard !isRunning else { return }
-        isRunning = true
-
-        let signaling = SignalingProvider(connection: connection,
-                                          tokenProvider: tokenProvider).make()
-        let client = WebRTCClient(streamName: camera.streamName,
-                                  startMuted: isMuted,
-                                  signaling: signaling)
-        client.add(renderer: renderer.sink)
-        client.onStateChange = { [weak self] state in
-            guard let self = self else { return }
-            self.connectionState = state
-            self.reconnect?.noteState(state)
-        }
-
-        let reconnect = ReconnectController(client: client)
-        reconnect.lastFrameAge = { [weak self] in self?.renderer.sink.ageSeconds ?? .infinity }
-
-        let stats = StatsMonitor(client: client)
-        stats.onUpdate = { [weak self] snapshot in
-            guard let self = self else { return }
-            self.stats = snapshot
-            if self.cryAlertsEnabled && !self.isMuted {
-                self.cryDetector.ingest(level: snapshot.audioLevel)
-            }
-        }
-
-        self.client = client
-        self.reconnect = reconnect
-        self.statsMonitor = stats
-
-        reconnect.start()
-        stats.start()
-        client.setMuted(isMuted)
-    }
-
-    func stop() {
-        guard isRunning else { return }
-        isRunning = false
-        statsMonitor?.stop()
-        reconnect?.stop()
-        cryDetector.reset()
-        client = nil
-        reconnect = nil
-        statsMonitor = nil
-        connectionState = .idle
     }
 
     // MARK: Audio
 
-    func toggleMute() {
-        setMuted(!isMuted)
-        Haptics.tap()
-    }
-
-    func setMuted(_ muted: Bool) {
-        isMuted = muted
-        client?.setMuted(muted)
-        if muted { cryDetector.reset() }
-    }
+    func toggleMute() { source.toggleMute() }
 
     // MARK: Gestures / framing
 
@@ -149,6 +71,7 @@ final class PaneViewModel: ObservableObject, Identifiable {
         mode = preset.mode
         orientation = preset.orientation
         updateUniforms()
+        persistAim()
         Haptics.selection()
     }
 
@@ -156,27 +79,25 @@ final class PaneViewModel: ObservableObject, Identifiable {
         orientation = camera.dewarp.defaultOrientation
         mode = camera.dewarp.mode
         updateUniforms()
+        persistAim()
         Haptics.tap()
+    }
+
+    /// Called when a PTZ gesture ends, to save the new framing for this slot.
+    func endInteraction() {
+        guard camera.isFisheye else { return }
+        persistAim()
     }
 
     func snapshot(size: CGSize) -> UIImage? {
         renderer.snapshot(size: size)
     }
 
-    // MARK: Config updates
+    // MARK: Internal
 
-    func updateConfig(camera: CameraSettings, connection: ConnectionSettings, cryAlertsEnabled: Bool, cryChimeEnabled: Bool) {
-        let needsReconnect = camera.streamName != self.camera.streamName || connection != self.connection
-        self.camera = camera
-        self.connection = connection
-        self.cryAlertsEnabled = cryAlertsEnabled
-        self.cryChimeEnabled = cryChimeEnabled
-        self.cryDetector.sensitivity = camera.crySensitivity
-        updateUniforms()
-        if needsReconnect && isRunning {
-            stop()
-            start()
-        }
+    private func persistAim() {
+        guard camera.isFisheye else { return }
+        onAimChanged?(id, SlotView(mode: mode, orientation: orientation))
     }
 
     private func updateUniforms() {

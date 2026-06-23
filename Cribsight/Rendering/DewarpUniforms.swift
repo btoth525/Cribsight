@@ -37,7 +37,11 @@ struct DewarpUniformsData {
         if !isFisheye {
             u.mode = 0
         } else {
-            u.mode = (mode == .panorama) ? 1 : 2
+            switch mode {
+            case .panorama:     u.mode = 1
+            case .perspective:  u.mode = 2
+            case .littlePlanet: u.mode = 3
+            }
         }
         u.flip = params.flipHorizontal ? 1 : 0
         u.centerX = params.centerX

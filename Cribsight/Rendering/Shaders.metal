@@ -107,43 +107,59 @@ fragment float4 fsDewarp(VSOut in [[stage_in]],
     constexpr sampler s(address::clamp_to_edge, filter::linear);
 
     float2 srcUV;
-    bool valid = true;
+    float theta = 0.0;
+    bool fisheye = (u.mode != 0);
 
     if (u.mode == 0) {
-        // Passthrough (Owlet pane / raw fisheye).
+        // Passthrough (normal camera / raw fisheye).
         srcUV = fillUV(in.uv, u.texAspect, u.viewAspect);
     } else if (u.mode == 1) {
         // Panorama: x → azimuth, y → polar angle.
         float coverage = (2.0 * M_PI_F) / max(u.zoom, 0.2);
         float phi = (in.uv.x - 0.5) * coverage + u.pan;
-        float theta = mix(u.panoUp, u.panoDown, in.uv.y);
+        theta = mix(u.panoUp, u.panoDown, in.uv.y);
         srcUV = fisheyeUV(theta, phi, u);
-        valid = theta <= (u.lensFOV * 0.5);
-    } else {
+    } else if (u.mode == 2) {
         // Perspective virtual-PTZ.
         float tanHalf = tan(u.outputFOV * 0.5) / max(u.zoom, 0.2);
         float px = (in.uv.x - 0.5) * 2.0 * tanHalf * max(u.viewAspect, 1e-4);
         float py = (0.5 - in.uv.y) * 2.0 * tanHalf;
         float3 ray = normalize(float3(px, py, 1.0));
         float3 dir = rotateRay(ray, u.pan, u.tilt, u.roll);
-        float theta = acos(clamp(dir.z, -1.0, 1.0));
+        theta = acos(clamp(dir.z, -1.0, 1.0));
         float phi = atan2(dir.y, dir.x);
         srcUV = fisheyeUV(theta, phi, u);
-        valid = theta <= (u.lensFOV * 0.5);
+    } else {
+        // Little planet: stereographic projection looking down the lens axis.
+        float2 p = (in.uv - 0.5) * 2.0;
+        p.x *= max(u.viewAspect, 1e-4);
+        float R = length(p) / max(u.zoom, 0.2);
+        float phi = atan2(p.y, p.x) + u.pan;
+        theta = 2.0 * atan(R);
+        srcUV = fisheyeUV(theta, phi, u);
     }
 
     srcUV = rotateUV(srcUV, u.rotation, u.flip);
 
-    if (u.mode != 0) {
-        if (srcUV.x < 0.0 || srcUV.x > 1.0 || srcUV.y < 0.0 || srcUV.y > 1.0) {
-            valid = false;
-        }
-    }
-    if (!valid) {
-        return float4(0.02, 0.02, 0.03, 1.0);
+    if (!fisheye) {
+        float yv = yTex.sample(s, srcUV).r;
+        float2 cc = cbcrTex.sample(s, srcUV).rg;
+        return float4(yuvToRGB(yv, cc), 1.0);
     }
 
-    float yv = yTex.sample(s, srcUV).r;
-    float2 cc = cbcrTex.sample(s, srcUV).rg;
-    return float4(yuvToRGB(yv, cc), 1.0);
+    // Soft, anti-aliased mask: fade out at the lens edge and at the source
+    // borders so the circular boundary doesn't show a hard jagged ring.
+    float edge = u.lensFOV * 0.5;
+    float aa = 1.0 - smoothstep(edge * 0.98, edge, theta);
+    aa *= smoothstep(0.0, 0.004, srcUV.x) * (1.0 - smoothstep(0.996, 1.0, srcUV.x));
+    aa *= smoothstep(0.0, 0.004, srcUV.y) * (1.0 - smoothstep(0.996, 1.0, srcUV.y));
+
+    float3 bg = float3(0.02, 0.02, 0.03);
+    if (aa <= 0.0) { return float4(bg, 1.0); }
+
+    float2 uv = clamp(srcUV, 0.0, 1.0);
+    float yv = yTex.sample(s, uv).r;
+    float2 cc = cbcrTex.sample(s, uv).rg;
+    float3 color = yuvToRGB(yv, cc);
+    return float4(mix(bg, color, aa), 1.0);
 }

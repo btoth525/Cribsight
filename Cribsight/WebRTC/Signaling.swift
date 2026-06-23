@@ -45,7 +45,7 @@ struct SignalingProvider {
             return WHEPSignaling(apiBase: connection.apiBase)
         case .frigate:
             return WebSocketSignaling(wsBase: connection.wsBase,
-                                      token: tokenProvider())
+                                      tokenProvider: tokenProvider)
         }
     }
 }

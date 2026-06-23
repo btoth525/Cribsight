@@ -9,7 +9,8 @@ import WebRTC
 /// any trickle `webrtc/candidate` messages).
 final class WebSocketSignaling: NSObject, Signaling {
     private let wsBase: String
-    private let token: String?
+    /// Read fresh on each exchange so reconnects use a refreshed Frigate token.
+    private let tokenProvider: () -> String?
 
     private var task: URLSessionWebSocketTask?
     private var completion: ((Result<String, Error>) -> Void)?
@@ -17,15 +18,19 @@ final class WebSocketSignaling: NSObject, Signaling {
     private var answered = false
     private var timeoutTimer: Timer?
 
-    init(wsBase: String, token: String?) {
+    init(wsBase: String, tokenProvider: @escaping () -> String?) {
         self.wsBase = wsBase
-        self.token = token
+        self.tokenProvider = tokenProvider
     }
 
     func exchange(offer: String,
                   streamName: String,
                   onRemoteCandidate: @escaping (RTCIceCandidate) -> Void,
                   completion: @escaping (Result<String, Error>) -> Void) {
+        // Reset one-shot state so the same instance works across reconnects.
+        answered = false
+        task?.cancel(with: .goingAway, reason: nil)
+        task = nil
         self.completion = completion
         self.onRemoteCandidate = onRemoteCandidate
 
@@ -37,7 +42,7 @@ final class WebSocketSignaling: NSObject, Signaling {
 
         var request = URLRequest(url: url)
         request.timeoutInterval = 12
-        if let token, !token.isEmpty {
+        if let token = tokenProvider(), !token.isEmpty {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             request.setValue("frigate_token=\(token)", forHTTPHeaderField: "Cookie")
         }

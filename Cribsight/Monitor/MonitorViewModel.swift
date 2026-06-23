@@ -3,9 +3,9 @@ import SwiftUI
 import UIKit
 import Combine
 
-/// Top-level monitor state: the dynamic set of camera panes, the active layout,
-/// Frigate login, fullscreen, kiosk lock, control-bar auto-hide, night-mode
-/// evaluation, and transient toasts.
+/// Top-level monitor state: per-camera sources, per-slot panes for the active
+/// layout, Frigate login, fullscreen, kiosk lock, control auto-hide, night mode
+/// and toasts.
 final class MonitorViewModel: ObservableObject {
     @Published private(set) var panes: [PaneViewModel] = []
     @Published private(set) var activeLayout: PaneLayout
@@ -18,8 +18,11 @@ final class MonitorViewModel: ObservableObject {
 
     let config: AppConfig
 
-    /// Frigate auth session (nil in Direct mode). Recreated on each login.
+    /// One source per distinct camera used by the active layout.
+    private var sources: [UUID: CameraSource] = [:]
+    /// Frigate auth session (nil in Direct mode).
     private var frigateClient: FrigateClient?
+    private lazy var tokenProvider: () -> String? = { [weak self] in self?.frigateClient?.token }
 
     private var nightTimer: Timer?
     private var controlsHideWork: DispatchWorkItem?
@@ -32,9 +35,8 @@ final class MonitorViewModel: ObservableObject {
         evaluateNightMode()
     }
 
-    /// Pane driving a given camera (a camera may appear in several layout slots).
-    func pane(for cameraID: UUID) -> PaneViewModel? {
-        panes.first { $0.camera.id == cameraID }
+    func pane(forSlot slotID: UUID) -> PaneViewModel? {
+        panes.first { $0.id == slotID }
     }
 
     var fisheyePanes: [PaneViewModel] { panes.filter { $0.camera.isFisheye } }
@@ -44,20 +46,20 @@ final class MonitorViewModel: ObservableObject {
     func start() {
         AudioController.shared.activate()
         UIApplication.shared.isIdleTimerDisabled = config.settings.keepAwake
-        connectThenStartPanes()
+        connectThenStartSources()
         startNightTimer()
         scheduleControlsHide()
     }
 
     func stop() {
-        panes.forEach { $0.stop() }
+        sources.values.forEach { $0.stop() }
         nightTimer?.invalidate(); nightTimer = nil
         UIApplication.shared.isIdleTimerDisabled = false
         AudioController.shared.deactivate()
     }
 
     func pauseForBackground() {
-        panes.forEach { $0.stop() }
+        sources.values.forEach { $0.stop() }
         nightTimer?.invalidate(); nightTimer = nil
     }
 
@@ -65,17 +67,17 @@ final class MonitorViewModel: ObservableObject {
         guard config.settings.hasCompletedOnboarding, config.isConfigured else { return }
         AudioController.shared.activate()
         UIApplication.shared.isIdleTimerDisabled = config.settings.keepAwake
-        connectThenStartPanes()
+        connectThenStartSources()
         startNightTimer()
         evaluateNightMode()
     }
 
-    /// In Frigate mode, log in for a JWT before starting the panes (their
+    /// In Frigate mode, log in for a JWT before starting the sources (their
     /// WebSocket signaling reads the token via `frigateClient`). Direct mode
-    /// starts immediately.
-    private func connectThenStartPanes() {
+    /// starts immediately. `CameraSource.start()` is guarded against double-start.
+    private func connectThenStartSources() {
         guard config.settings.connection.mode == .frigate else {
-            panes.forEach { $0.start() }
+            sources.values.forEach { $0.start() }
             return
         }
         let conn = config.settings.connection
@@ -86,7 +88,7 @@ final class MonitorViewModel: ObservableObject {
                 guard let self = self else { return }
                 switch result {
                 case .success:
-                    self.panes.forEach { $0.start() }
+                    self.sources.values.forEach { $0.start() }
                 case .failure(let error):
                     self.showToast("Frigate login failed · \(error.localizedDescription)")
                 }
@@ -94,51 +96,69 @@ final class MonitorViewModel: ObservableObject {
         }
     }
 
-    // MARK: Panes
+    private func startIdleSources() {
+        if config.settings.connection.mode == .frigate && frigateClient?.token == nil {
+            connectThenStartSources()
+        } else {
+            sources.values.forEach { if !$0.isRunning { $0.start() } }
+        }
+    }
 
-    func rebuildPanes() {
+    // MARK: Sources & panes
+
+    /// Create/refresh/remove `CameraSource`s so exactly the cameras used by the
+    /// active layout have a live connection.
+    private func ensureSources() {
         let conn = config.settings.connection
-        let cams = config.settings.cameras
-        let tokenProvider: () -> String? = { [weak self] in self?.frigateClient?.token }
+        let neededIDs = Set(config.activeLayout.slots.map { $0.cameraID })
 
-        if panes.map({ $0.id }) == cams.map({ $0.id }) {
-            for (index, cam) in cams.enumerated() {
-                panes[index].updateConfig(camera: cam, connection: conn,
+        for (id, source) in sources where !neededIDs.contains(id) {
+            source.stop()
+            sources[id] = nil
+        }
+        for id in neededIDs {
+            guard let cam = config.camera(for: id) else { continue }
+            if let existing = sources[id] {
+                existing.updateConfig(camera: cam, connection: conn,
+                                      cryAlertsEnabled: config.settings.cryAlertsEnabled,
+                                      cryChimeEnabled: config.settings.cryChimeEnabled)
+            } else {
+                let source = CameraSource(camera: cam, connection: conn, tokenProvider: tokenProvider,
                                           cryAlertsEnabled: config.settings.cryAlertsEnabled,
                                           cryChimeEnabled: config.settings.cryChimeEnabled)
+                source.onCry = { [weak self] name in self?.showToast("Sound detected · \(name)") }
+                sources[id] = source
             }
-        } else {
-            panes.forEach { $0.stop() }
-            panes = cams.map { makePane($0, connection: conn, tokenProvider: tokenProvider) }
+        }
+    }
+
+    /// Rebuild the per-slot panes to match the active layout, reusing sources and
+    /// (when the slot set is unchanged) the existing panes.
+    func rebuildPanes() {
+        ensureSources()
+        let existing = Dictionary(panes.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        panes = config.activeLayout.slots.compactMap { slot in
+            guard let source = sources[slot.cameraID] else { return nil }
+            // Reuse the pane for this slot if its camera is unchanged, so the
+            // Metal view and current aim survive add/remove of other panes.
+            if let pane = existing[slot.id], pane.source.id == slot.cameraID {
+                return pane
+            }
+            let pane = PaneViewModel(slotID: slot.id, source: source, initialView: slot.view)
+            pane.onAimChanged = { [weak self] sid, view in
+                self?.persistSlotAim(slotID: sid, view: view)
+            }
+            return pane
         }
         activeLayout = config.activeLayout
     }
 
-    private func makePane(_ cam: CameraSettings,
-                          connection: ConnectionSettings,
-                          tokenProvider: @escaping () -> String?) -> PaneViewModel {
-        let vm = PaneViewModel(camera: cam, connection: connection, tokenProvider: tokenProvider,
-                               cryAlertsEnabled: config.settings.cryAlertsEnabled,
-                               cryChimeEnabled: config.settings.cryChimeEnabled)
-        vm.onCry = { [weak self] name in
-            self?.showToast("Sound detected · \(name)")
-        }
-        return vm
-    }
-
-    /// Apply edited settings coming back from the Settings sheet. `rebuildPanes`
-    /// reconnects panes whose stream/connection changed and builds any new ones;
-    /// `connectThenStartPanes` (re)logs into Frigate if needed and starts the
-    /// rest. `start()` is guarded, so already-running panes are untouched.
+    /// Apply edited settings coming back from the Settings sheet.
     func applySettingsChange() {
         rebuildPanes()
-        connectThenStartPanes()
+        connectThenStartSources()
         UIApplication.shared.isIdleTimerDisabled = config.settings.keepAwake
         evaluateNightMode()
-    }
-
-    func refreshLayout() {
-        activeLayout = config.activeLayout
     }
 
     // MARK: Layout editing
@@ -155,19 +175,31 @@ final class MonitorViewModel: ObservableObject {
         Haptics.tap()
     }
 
-    /// Persist a layout edited in the canvas and re-publish it.
+    /// Persist a layout edited in the canvas (drag/resize/add/remove) and rebuild
+    /// panes if its slot set changed.
     func commitLayout(_ layout: PaneLayout) {
         config.saveLayout(layout)
-        activeLayout = config.activeLayout
+        rebuildPanes()
+        startIdleSources()
     }
 
     func selectLayout(_ id: UUID) {
         config.selectLayout(id)
-        activeLayout = config.activeLayout
+        rebuildPanes()
+        startIdleSources()
         Haptics.selection()
     }
 
-    // MARK: Layout / controls
+    /// Save a slot's fisheye framing without rebuilding panes.
+    private func persistSlotAim(slotID: UUID, view: SlotView) {
+        var layout = config.activeLayout
+        guard let i = layout.slots.firstIndex(where: { $0.id == slotID }) else { return }
+        layout.slots[i].view = view
+        config.saveLayout(layout)
+        activeLayout = config.activeLayout
+    }
+
+    // MARK: Controls
 
     func toggleFullscreen(_ id: UUID) {
         guard !editingLayout else { return }
@@ -207,9 +239,7 @@ final class MonitorViewModel: ObservableObject {
     func setLocked(_ locked: Bool) {
         self.locked = locked
         if locked { editingLayout = false }
-        withAnimation(.easeInOut(duration: 0.3)) {
-            controlsVisible = !locked
-        }
+        withAnimation(.easeInOut(duration: 0.3)) { controlsVisible = !locked }
         if !locked { scheduleControlsHide() }
         Haptics.rigid()
     }
@@ -233,7 +263,6 @@ final class MonitorViewModel: ObservableObject {
         }
     }
 
-    /// Quick toggle: forces night mode on or off (persists to settings).
     func toggleNight() {
         config.settings.nightMode.trigger = nightActive ? .off : .on
         evaluateNightMode()

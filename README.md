@@ -145,9 +145,21 @@ Everything (cameras, layouts, fisheye calibration) is editable later from the
   **watchdog** that recovers silent stalls, keep-awake, and clean
   background/foreground handling.
 
-### Tuning the fisheye
+### Fisheye superpowers
 
-Open **Settings ▸ Fisheye Calibration** and adjust:
+A single ceiling fisheye can drive **multiple panes at once**, each its own
+virtual camera. In layout mode, tap **Split fisheye** to instantly get two
+side-by-side PTZ views (e.g. one per crib) from the one stream — decoded once, no
+extra load. Add more panes of the same camera and aim each independently
+(drag to pan/tilt, pinch to zoom). Each pane remembers its framing.
+
+Projection modes (per pane, from the preset bar): **Panorama** (equirectangular
+strip), **Zoom** (rectilinear virtual-PTZ), and **Planet** (a stereographic
+"tiny planet" of the whole room). Edges are anti-aliased so the circular boundary
+stays clean.
+
+To tune the lens, open the camera in **Settings ▸ Cameras ▸ (your fisheye)** and
+adjust:
 
 - **Center X/Y** and **Radius** so the circular image fills the dewarp.
 - **Lens FOV°** to match your lens (Reolink fisheye ≈ 180–200°).

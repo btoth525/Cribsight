@@ -42,7 +42,7 @@ struct LayoutCanvas: View {
 
     @ViewBuilder
     private func slotView(_ slot: LayoutSlot) -> some View {
-        if let pane = vm.pane(for: slot.cameraID) {
+        if let pane = vm.pane(forSlot: slot.id) {
             let w = max(1, slot.width * size.width - gap)
             let h = max(1, slot.height * size.height - gap)
             ZStack {

@@ -16,6 +16,9 @@ struct LayoutEditorBar: View {
                     presetChip("One bigger", "rectangle.lefthalf.inset.filled") { apply(.spotlight) }
                     presetChip("Grid", "square.grid.2x2") { apply(.grid) }
                     presetChip("Picture-in-pic", "pip") { apply(.pip) }
+                    if vm.config.cameras.contains(where: { $0.isFisheye }) {
+                        presetChip("Split fisheye", "circle.circle") { splitFisheye() }
+                    }
                 }
                 .padding(.horizontal, 2)
             }
@@ -49,17 +52,20 @@ struct LayoutEditorBar: View {
 
     private var addMenu: some View {
         Menu {
-            let placed = Set(vm.activeLayout.slots.map { $0.cameraID })
-            let available = vm.config.cameras.filter { !placed.contains($0.id) }
-            if available.isEmpty {
-                Text("All cameras are placed")
+            if vm.config.cameras.isEmpty {
+                Text("No cameras yet")
             } else {
-                ForEach(available) { cam in
-                    Button(cam.displayName) { addCamera(cam.id) }
+                ForEach(vm.config.cameras) { cam in
+                    // A fisheye can be added more than once for a second aim.
+                    Button {
+                        addCamera(cam.id)
+                    } label: {
+                        Label(cam.displayName, systemImage: cam.isFisheye ? "circle.circle" : "video")
+                    }
                 }
             }
         } label: {
-            Label("Add camera", systemImage: "plus")
+            Label("Add pane", systemImage: "plus")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(Theme.textPrimary)
                 .padding(.horizontal, 14).padding(.vertical, 10)
@@ -98,5 +104,22 @@ struct LayoutEditorBar: View {
         layout.slots.append(LayoutSlot(cameraID: id, x: 0.08, y: 0.08, width: 0.42, height: 0.42))
         vm.commitLayout(layout)
         Haptics.tap()
+    }
+
+    /// One tap: turn a single ceiling fisheye into two side-by-side panes, each a
+    /// virtual PTZ aimed at a different crib.
+    private func splitFisheye() {
+        guard let fish = vm.config.cameras.first(where: { $0.isFisheye }) else { return }
+        let cribA = ViewOrientation(pan: -0.6, tilt: 0.5, zoom: 1.2)
+        let cribB = ViewOrientation(pan: 0.6, tilt: 0.5, zoom: 1.2)
+        var layout = vm.activeLayout
+        layout.slots = [
+            LayoutSlot(cameraID: fish.id, x: 0, y: 0, width: 0.5, height: 1,
+                       view: SlotView(mode: .perspective, orientation: cribA)),
+            LayoutSlot(cameraID: fish.id, x: 0.5, y: 0, width: 0.5, height: 1,
+                       view: SlotView(mode: .perspective, orientation: cribB))
+        ]
+        vm.commitLayout(layout)
+        Haptics.selection()
     }
 }

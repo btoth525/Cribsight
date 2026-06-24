@@ -44,6 +44,10 @@ struct SettingsView: View {
         .onAppear {
             config.settings.connection.mode = .frigate
             password = config.frigatePassword ?? ""
+            // Refresh the available-cameras list so "Add camera" is ready to pick from.
+            if catalog.names.isEmpty, config.settings.connection.isComplete, !password.isEmpty {
+                catalog.discover(connection: config.settings.connection, password: password)
+            }
         }
     }
 
@@ -121,13 +125,35 @@ struct SettingsView: View {
             .onDelete { idx in
                 idx.map { config.settings.cameras[$0].id }.forEach { config.removeCamera($0) }
             }
-            Button {
-                config.addCamera(.blank()); Haptics.tap()
+            Menu {
+                let available = catalog.names.filter { name in
+                    !config.settings.cameras.contains { $0.streamName == name }
+                }
+                if available.isEmpty {
+                    if catalog.isLoading {
+                        Text("Loading cameras…")
+                    } else if catalog.names.isEmpty {
+                        Text("Use Connect above to load cameras")
+                    } else {
+                        Text("All cameras added")
+                    }
+                } else {
+                    ForEach(available, id: \.self) { name in
+                        Button {
+                            config.addCameraFromStream(name)
+                            Haptics.tap()
+                        } label: {
+                            Label(AppConfig.prettify(name), systemImage: "video")
+                        }
+                    }
+                }
             } label: {
                 Label("Add camera", systemImage: "plus")
             }
         } header: {
             Text("Cameras")
+        } footer: {
+            Text("Adding a camera drops it straight into the grid. Swipe a camera to remove it.")
         }
     }
 

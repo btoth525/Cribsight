@@ -189,6 +189,29 @@ final class AppConfig: ObservableObject {
         settings.cameras.append(camera)
     }
 
+    /// Add a camera for a discovered stream and grow the grid to include it.
+    func addCameraFromStream(_ stream: String, isFisheye: Bool = false) {
+        guard !settings.cameras.contains(where: { $0.streamName == stream }) else { return }
+        var cam = CameraSettings.blank()
+        cam.streamName = stream
+        cam.displayName = AppConfig.prettify(stream)
+        cam.isFisheye = isFisheye
+        settings.cameras.append(cam)
+        reflowActiveLayout()
+    }
+
+    /// Re-flow the active layout into a balanced grid of all configured cameras,
+    /// so adding/removing a camera expands/condenses the grid sensibly.
+    func reflowActiveLayout() {
+        let ids = settings.cameras
+            .filter { !$0.streamName.trimmingCharacters(in: .whitespaces).isEmpty }
+            .map { $0.id }
+        guard !ids.isEmpty else { return }
+        var layout = activeLayout
+        layout.slots = PaneLayout.auto(cameraIDs: ids).slots
+        saveLayout(layout)
+    }
+
     /// Replace the camera list with the streams discovered from Frigate, so the
     /// user doesn't assign anything by hand. Existing cameras whose stream still
     /// exists keep their settings (display name, fisheye flag, calibration);
@@ -243,6 +266,8 @@ final class AppConfig: ObservableObject {
         for i in settings.layouts.indices {
             settings.layouts[i].slots.removeAll { $0.cameraID == id }
         }
+        // Re-balance the visible grid so a removed camera doesn't leave a gap.
+        if !settings.cameras.isEmpty { reflowActiveLayout() }
     }
 
     // MARK: Migration

@@ -52,13 +52,13 @@ final class PaneViewModel: ObservableObject, Identifiable {
 
     func applyDrag(dx: Float, dy: Float) {
         guard camera.isFisheye else { return }
-        // Default planet feel: drag left/right spins the planet (pan), drag
-        // up/down tilts into the room. Pan was inverted before, so its default is
-        // flipped here. Per-camera invert flags flip either axis for odd mounts.
+        // Drag left/right pans level around the room (azimuth), up/down tilts
+        // between straight-down and the walls. Per-camera invert flags flip either
+        // axis for odd mounts. tilt is an elevation angle (0…~89° off nadir).
         let panDir: Float = camera.dewarp.invertPan ? 1 : -1
         let tiltDir: Float = camera.dewarp.invertTilt ? -1 : 1
         orientation.pan += panDir * dx
-        orientation.tilt = min(max(orientation.tilt + tiltDir * dy, -1.45), 1.45)
+        orientation.tilt = min(max(orientation.tilt + tiltDir * dy, 0.02), 1.56)
         updateUniforms()
     }
 

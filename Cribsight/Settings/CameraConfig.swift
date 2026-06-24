@@ -35,8 +35,8 @@ struct DewarpParams: Codable, Equatable {
     var radius: Float = 0.5
     /// Physical lens field of view (Reolink fisheye ≈ 180–200°).
     var lensFOVDegrees: Float = 200
-    /// Output FOV used by the perspective/virtual-PTZ mode.
-    var outputFOVDegrees: Float = 95
+    /// Base field of view of the virtual-PTZ window (zoom narrows it further).
+    var outputFOVDegrees: Float = 90
     /// Vertical extent of the panorama strip, in degrees from the lens axis.
     var panoramaUpDegrees: Float = 12     // how far above the horizon to include
     var panoramaDownDegrees: Float = 90   // down toward the floor/cribs
@@ -46,11 +46,10 @@ struct DewarpParams: Codable, Equatable {
     /// "grab the scene" feel; flip if pan/tilt feels backwards on your install.
     var invertPan: Bool = false
     var invertTilt: Bool = false
-    /// The single immersive mode: the stereographic "planet" — shows the whole
-    /// room and lets you pinch-zoom and drag to look around inside it.
-    var mode: FisheyeProjectionMode = .littlePlanet
-    /// Opens on the full planet overview (the whole room); pinch/drag from there.
-    var defaultOrientation: ViewOrientation = .identity
+    /// The single immersive mode: a rectilinear virtual-PTZ with a level horizon.
+    var mode: FisheyeProjectionMode = .perspective
+    /// Opens looking into the room at a moderate downward angle, filling the pane.
+    var defaultOrientation: ViewOrientation = ViewOrientation(pan: 0, tilt: 0.9, zoom: 1.2)
 }
 
 // Tolerant decoding: start from defaults and override only the keys present in
@@ -115,7 +114,7 @@ struct CameraSettings: Codable, Equatable, Identifiable {
             isFisheye: true,
             startMuted: false,
             crySensitivity: 0.6,
-            dewarp: DewarpParams(mode: .littlePlanet),
+            dewarp: DewarpParams(mode: .perspective),
             presets: ViewPreset.defaults
         )
     }
@@ -132,17 +131,18 @@ struct CameraSettings: Codable, Equatable, Identifiable {
 }
 
 extension ViewPreset {
-    /// Quick aims for the immersive planet view (the only fisheye mode the app exposes).
+    /// Quick aims for the immersive virtual-PTZ (the only fisheye mode the app exposes).
     static var defaults: [ViewPreset] {
         [
-            ViewPreset(name: "Overview", systemImage: "globe.americas",
-                       mode: .littlePlanet, orientation: .identity),
+            ViewPreset(name: "Overview", systemImage: "viewfinder",
+                       mode: .perspective,
+                       orientation: ViewOrientation(pan: 0, tilt: 0.9, zoom: 1.2)),
             ViewPreset(name: "Crib A", systemImage: "bed.double",
-                       mode: .littlePlanet,
-                       orientation: ViewOrientation(pan: -0.6, tilt: 0.6, zoom: 1.6)),
+                       mode: .perspective,
+                       orientation: ViewOrientation(pan: -0.7, tilt: 1.0, zoom: 1.8)),
             ViewPreset(name: "Crib B", systemImage: "bed.double.fill",
-                       mode: .littlePlanet,
-                       orientation: ViewOrientation(pan: 0.6, tilt: 0.6, zoom: 1.6))
+                       mode: .perspective,
+                       orientation: ViewOrientation(pan: 0.7, tilt: 1.0, zoom: 1.8))
         ]
     }
 }

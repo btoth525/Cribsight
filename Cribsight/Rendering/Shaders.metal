@@ -120,12 +120,24 @@ fragment float4 fsDewarp(VSOut in [[stage_in]],
         theta = mix(u.panoUp, u.panoDown, in.uv.y);
         srcUV = fisheyeUV(theta, phi, u);
     } else if (u.mode == 2) {
-        // Perspective virtual-PTZ.
+        // Rectilinear virtual-PTZ with a LEVEL horizon (the navigable mode pro
+        // fisheye apps use). pan = azimuth about the lens/vertical axis (z, which
+        // points down for a ceiling mount); tilt = elevation from straight-down.
+        // The "right" basis vector is kept horizontal, so dragging left↔right
+        // scrolls level instead of rolling the image.
         float tanHalf = tan(u.outputFOV * 0.5) / max(u.zoom, 0.2);
-        float px = (in.uv.x - 0.5) * 2.0 * tanHalf * max(u.viewAspect, 1e-4);
-        float py = (0.5 - in.uv.y) * 2.0 * tanHalf;
-        float3 ray = normalize(float3(px, py, 1.0));
-        float3 dir = rotateRay(ray, u.pan, u.tilt, u.roll);
+        float sx = (in.uv.x - 0.5) * 2.0 * tanHalf * max(u.viewAspect, 1e-4);
+        float sy = (0.5 - in.uv.y) * 2.0 * tanHalf;
+
+        float tilt = clamp(u.tilt, 0.02, 1.56);     // 0 = straight down, ~89° = horizontal
+        float cp = cos(u.pan), sp = sin(u.pan);
+        float st = sin(tilt), ct = cos(tilt);
+
+        float3 fwd   = float3(st * cp, st * sp, ct);   // view direction
+        float3 right = float3(-sp, cp, 0.0);           // always horizontal → level pan
+        float3 up    = cross(right, fwd);              // toward the ceiling
+
+        float3 dir = normalize(fwd + sx * right + sy * up);
         theta = acos(clamp(dir.z, -1.0, 1.0));
         float phi = atan2(dir.y, dir.x);
         srcUV = fisheyeUV(theta, phi, u);

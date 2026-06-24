@@ -1,8 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// First-run setup: choose how to connect (Direct go2rtc or Frigate login),
-/// discover cameras, and assign them.
+/// First-run setup: log in to Frigate, discover cameras, and assign them.
 struct OnboardingView: View {
     @ObservedObject var config: AppConfig
     @StateObject private var catalog = StreamCatalog()
@@ -42,7 +41,10 @@ struct OnboardingView: View {
         }
         .preferredColorScheme(.dark)
         .tint(Theme.accent)
-        .onAppear { password = config.frigatePassword ?? "" }
+        .onAppear {
+            config.settings.connection.mode = .frigate
+            password = config.frigatePassword ?? ""
+        }
     }
 
     private var header: some View {
@@ -70,40 +72,33 @@ struct OnboardingView: View {
 
     private var serverCard: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Connection")
+            Text("Connect to Frigate")
                 .font(.headline)
                 .foregroundStyle(Theme.textPrimary)
-
-            Picker("Mode", selection: $config.settings.connection.mode) {
-                ForEach(ConnectionMode.allCases) { Text($0.label).tag($0) }
-            }
-            .pickerStyle(.segmented)
-
-            Text(connection.mode.blurb)
+            Text("Enter your Frigate address and login. Cribsight signs in and finds your cameras for you.")
                 .font(.caption)
                 .foregroundStyle(Theme.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            field("Server IP / host", text: $config.settings.connection.host,
+            field("Frigate IP / host", text: $config.settings.connection.host,
                   placeholder: "192.168.1.50", keyboard: .URL)
+            field("Username", text: $config.settings.connection.username, placeholder: "admin")
+            secureField("Password", text: $password)
 
-            HStack {
-                Text("Port").foregroundStyle(Theme.textSecondary)
-                Spacer()
-                TextField(connection.mode == .frigate ? "8971" : "1984", value: portBinding,
-                          format: .number.grouping(.never))
-                    .keyboardType(.numberPad)
-                    .multilineTextAlignment(.trailing)
-                    .frame(width: 100)
+            HStack(spacing: 16) {
+                HStack {
+                    Text("Port").foregroundStyle(Theme.textSecondary)
+                    Spacer()
+                    TextField("8971", value: $config.settings.connection.frigatePort,
+                              format: .number.grouping(.never))
+                        .keyboardType(.numberPad)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 72)
+                }
+                Toggle("HTTPS", isOn: $config.settings.connection.useTLS)
+                    .font(.subheadline)
+                    .fixedSize()
             }
-
-            if connection.mode == .frigate {
-                field("Username", text: $config.settings.connection.username, placeholder: "admin")
-                secureField("Password", text: $password)
-            }
-
-            Toggle("Use HTTPS / WSS", isOn: $config.settings.connection.useTLS)
-                .font(.subheadline)
 
             Button {
                 Haptics.tap()
@@ -118,13 +113,12 @@ struct OnboardingView: View {
                 .frame(maxWidth: .infinity)
             }
             .glassButton()
-            .disabled(!connection.isComplete || catalog.isLoading
-                      || (connection.mode == .frigate && password.isEmpty))
-            .opacity(connection.isComplete ? 1 : 0.5)
+            .disabled(!connection.isComplete || catalog.isLoading || password.isEmpty)
+            .opacity(connection.isComplete && !password.isEmpty ? 1 : 0.5)
 
             DiscoveryStatusLabel(state: catalog.state)
 
-            Text("For sub-second video, port 8555 (TCP+UDP) must be reachable on your LAN, and go2rtc needs `webrtc.candidates: [\"\(connection.hostTrimmed.isEmpty ? "<server-ip>" : connection.hostTrimmed):8555\"]`.")
+            Text("Tip: for smooth video, make sure port 8555 (TCP + UDP) is open on your network.")
                 .font(.caption2)
                 .foregroundStyle(Theme.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -196,16 +190,6 @@ struct OnboardingView: View {
     }
 
     // MARK: Helpers
-
-    private var portBinding: Binding<Int> {
-        Binding(
-            get: { connection.mode == .frigate ? connection.frigatePort : connection.go2rtcPort },
-            set: {
-                if connection.mode == .frigate { config.settings.connection.frigatePort = $0 }
-                else { config.settings.connection.go2rtcPort = $0 }
-            }
-        )
-    }
 
     private func field(_ label: String, text: Binding<String>,
                        placeholder: String, keyboard: UIKeyboardType = .default) -> some View {

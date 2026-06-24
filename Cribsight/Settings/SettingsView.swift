@@ -34,16 +34,16 @@ struct SettingsView: View {
         }
         .preferredColorScheme(.dark)
         .tint(Theme.accent)
-        .onAppear { password = config.frigatePassword ?? "" }
+        .onAppear {
+            config.settings.connection.mode = .frigate
+            password = config.frigatePassword ?? ""
+        }
     }
 
     // MARK: Connection
 
     private var connectionSection: some View {
         Section {
-            Picker("Mode", selection: $config.settings.connection.mode) {
-                ForEach(ConnectionMode.allCases) { Text($0.label).tag($0) }
-            }
             HStack {
                 Text("Host"); Spacer()
                 TextField("192.168.1.50", text: $config.settings.connection.host)
@@ -52,22 +52,20 @@ struct SettingsView: View {
                     .keyboardType(.URL)
             }
             HStack {
-                Text("Port"); Spacer()
-                TextField(config.settings.connection.mode == .frigate ? "8971" : "1984",
-                          value: portBinding, format: .number.grouping(.never))
-                    .multilineTextAlignment(.trailing).keyboardType(.numberPad).frame(width: 90)
+                Text("Username"); Spacer()
+                TextField("admin", text: $config.settings.connection.username)
+                    .multilineTextAlignment(.trailing)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled()
             }
-            if config.settings.connection.mode == .frigate {
-                HStack {
-                    Text("Username"); Spacer()
-                    TextField("admin", text: $config.settings.connection.username)
-                        .multilineTextAlignment(.trailing)
-                        .textInputAutocapitalization(.never).autocorrectionDisabled()
-                }
-                HStack {
-                    Text("Password"); Spacer()
-                    SecureField("••••••••", text: $password).multilineTextAlignment(.trailing)
-                }
+            HStack {
+                Text("Password"); Spacer()
+                SecureField("••••••••", text: $password).multilineTextAlignment(.trailing)
+            }
+            HStack {
+                Text("Port"); Spacer()
+                TextField("8971", value: $config.settings.connection.frigatePort,
+                          format: .number.grouping(.never))
+                    .multilineTextAlignment(.trailing).keyboardType(.numberPad).frame(width: 90)
             }
             Toggle("Use HTTPS / WSS", isOn: $config.settings.connection.useTLS)
 
@@ -88,9 +86,9 @@ struct SettingsView: View {
                 DiscoveryStatusLabel(state: catalog.state)
             }
         } header: {
-            Text(config.settings.connection.mode == .frigate ? "Frigate login" : "go2rtc server")
+            Text("Frigate")
         } footer: {
-            Text("For sub-second video, port 8555 (TCP+UDP) must be reachable on your LAN, with `webrtc.candidates: [\"\(config.settings.connection.hostTrimmed.isEmpty ? "<server-ip>" : config.settings.connection.hostTrimmed):8555\"]` in go2rtc.")
+            Text("For smooth video, make sure port 8555 (TCP + UDP) is reachable on your LAN.")
         }
     }
 
@@ -209,16 +207,4 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: Helpers
-
-    private var portBinding: Binding<Int> {
-        Binding(
-            get: { config.settings.connection.mode == .frigate
-                    ? config.settings.connection.frigatePort : config.settings.connection.go2rtcPort },
-            set: {
-                if config.settings.connection.mode == .frigate { config.settings.connection.frigatePort = $0 }
-                else { config.settings.connection.go2rtcPort = $0 }
-            }
-        )
-    }
 }

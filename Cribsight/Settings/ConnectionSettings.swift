@@ -20,7 +20,7 @@ enum ConnectionMode: Int, Codable, CaseIterable, Identifiable {
 /// Everything needed to reach the server. The Frigate password is **not** stored
 /// here — it lives in the Keychain (`Keychain`), keyed by `keychainAccount`.
 struct ConnectionSettings: Codable, Equatable {
-    var mode: ConnectionMode = .go2rtc
+    var mode: ConnectionMode = .frigate
     var host: String = ""
     var useTLS: Bool = false
 

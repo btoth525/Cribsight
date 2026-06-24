@@ -42,8 +42,15 @@ struct DewarpParams: Codable, Equatable {
     var panoramaDownDegrees: Float = 90   // down toward the floor/cribs
     var roll: Float = 0
     var flipHorizontal: Bool = false
-    var mode: FisheyeProjectionMode = .littlePlanet
-    var defaultOrientation: ViewOrientation = .identity
+    /// Flip the drag direction per axis (mount-dependent). Defaults give the
+    /// "grab the scene" feel; flip if pan/tilt feels backwards on your install.
+    var invertPan: Bool = false
+    var invertTilt: Bool = false
+    /// The single immersive mode: a rectilinear virtual-PTZ (look around inside the
+    /// room), the projection pro fisheye apps (Reolink/Verkada/Axis) use.
+    var mode: FisheyeProjectionMode = .perspective
+    /// Opens looking into the room (tilted off the straight-down nadir) at a wide FOV.
+    var defaultOrientation: ViewOrientation = ViewOrientation(pan: 0, tilt: 0.5, zoom: 0.7)
 }
 
 /// A saved framing the user can snap to.
@@ -86,7 +93,7 @@ struct CameraSettings: Codable, Equatable, Identifiable {
             isFisheye: true,
             startMuted: false,
             crySensitivity: 0.6,
-            dewarp: DewarpParams(mode: .littlePlanet),
+            dewarp: DewarpParams(mode: .perspective),
             presets: ViewPreset.defaults
         )
     }
@@ -103,16 +110,17 @@ struct CameraSettings: Codable, Equatable, Identifiable {
 }
 
 extension ViewPreset {
-    /// Planet-mode quick aims (the only fisheye mode the app exposes).
+    /// Quick aims for the immersive virtual-PTZ (the only fisheye mode the app exposes).
     static var defaults: [ViewPreset] {
         [
-            ViewPreset(name: "Overview", systemImage: "globe.americas",
-                       mode: .littlePlanet, orientation: .identity),
+            ViewPreset(name: "Overview", systemImage: "viewfinder",
+                       mode: .perspective,
+                       orientation: ViewOrientation(pan: 0, tilt: 0.5, zoom: 0.7)),
             ViewPreset(name: "Crib A", systemImage: "bed.double",
-                       mode: .littlePlanet,
+                       mode: .perspective,
                        orientation: ViewOrientation(pan: -0.6, tilt: 0.6, zoom: 1.6)),
             ViewPreset(name: "Crib B", systemImage: "bed.double.fill",
-                       mode: .littlePlanet,
+                       mode: .perspective,
                        orientation: ViewOrientation(pan: 0.6, tilt: 0.6, zoom: 1.6))
         ]
     }

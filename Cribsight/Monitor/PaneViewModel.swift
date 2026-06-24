@@ -52,12 +52,13 @@ final class PaneViewModel: ObservableObject, Identifiable {
 
     func applyDrag(dx: Float, dy: Float) {
         guard camera.isFisheye else { return }
-        if mode == .panorama {
-            orientation.pan -= dx
-        } else {
-            orientation.pan += dx
-            orientation.tilt = min(max(orientation.tilt + dy, -1.45), 1.45)
-        }
+        // Grab-and-move-the-scene: the view follows your finger (Reolink/Verkada
+        // feel). Default: drag right pushes the scene right (pan -=), drag up looks
+        // up (tilt -=). Per-camera invert flags flip either axis for odd mounts.
+        let panDir: Float = camera.dewarp.invertPan ? 1 : -1
+        let tiltDir: Float = camera.dewarp.invertTilt ? 1 : -1
+        orientation.pan += panDir * dx
+        orientation.tilt = min(max(orientation.tilt + tiltDir * dy, -1.45), 1.45)
         updateUniforms()
     }
 

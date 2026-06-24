@@ -60,10 +60,12 @@ struct CameraSettingsView: View {
             calibration("Radius", cam.dewarp.radius, 0.2...0.7)
             calibration("Lens FOV°", cam.dewarp.lensFOVDegrees, 120...240, fmt: "%.0f")
             Toggle("Flip horizontally", isOn: cam.dewarp.flipHorizontal)
+            Toggle("Invert pan (left / right)", isOn: cam.dewarp.invertPan)
+            Toggle("Invert tilt (up / down)", isOn: cam.dewarp.invertTilt)
         } header: {
             Text("Fisheye calibration")
         } footer: {
-            Text("Dial Center/Radius so the circular image fills the view, and Lens FOV to match your lens (≈180–200°). Pinch to zoom and drag to look around live.")
+            Text("Dial Center/Radius so the circular image fills the view, and Lens FOV to match your lens (≈180–200°). Pinch to zoom, drag to look around. If pan or tilt feels backwards, flip it here.")
         }
     }
 

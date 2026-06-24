@@ -1,23 +1,50 @@
 import SwiftUI
 import UIKit
 
-/// First-run setup: log in to Frigate, discover cameras, and assign them.
+/// First-run setup: a welcome walkthrough, then Frigate login, then a checklist
+/// of the cameras to use.
 struct OnboardingView: View {
     @ObservedObject var config: AppConfig
     @StateObject private var catalog = StreamCatalog()
     @State private var password: String = ""
     @State private var didPrepare = false
+    @State private var showWelcome = true
+    /// Streams the user ticked, and which of those are fisheye.
+    @State private var selected: Set<String> = []
+    @State private var fisheyeStreams: Set<String> = []
     var onDone: () -> Void
 
     private var connection: ConnectionSettings { config.settings.connection }
 
     private var canStart: Bool {
-        guard connection.isComplete else { return false }
-        if connection.mode == .frigate && password.isEmpty { return false }
-        return config.settings.cameras.contains { !$0.streamName.trimmingCharacters(in: .whitespaces).isEmpty }
+        connection.isComplete && !password.isEmpty && !selected.isEmpty
     }
 
     var body: some View {
+        Group {
+            if showWelcome {
+                TourView {
+                    config.settings.hasSeenTour = true
+                    withAnimation { showWelcome = false }
+                }
+            } else {
+                setup
+            }
+        }
+        .preferredColorScheme(.dark)
+        .tint(Theme.accent)
+        .onAppear {
+            config.settings.connection.mode = .frigate
+            password = config.frigatePassword ?? ""
+            if !didPrepare {
+                didPrepare = true
+                // Cameras are built from the checklist on Start; clear any seeds.
+                config.settings.cameras = []
+            }
+        }
+    }
+
+    private var setup: some View {
         ZStack {
             Theme.canvas.ignoresSafeArea()
             RadialGradient(colors: [Theme.accent.opacity(0.25), .clear],
@@ -40,23 +67,6 @@ struct OnboardingView: View {
                 .frame(maxWidth: .infinity)
             }
         }
-        .preferredColorScheme(.dark)
-        .tint(Theme.accent)
-        .onAppear {
-            config.settings.connection.mode = .frigate
-            password = config.frigatePassword ?? ""
-            if !didPrepare {
-                didPrepare = true
-                // Fresh setup: drop the placeholder seed cameras so the list stays
-                // empty until Frigate hands back the real ones.
-                config.settings.cameras = []
-            }
-        }
-        .onChange(of: catalog.names) { _, names in
-            // As soon as Frigate hands back the camera list, build the cameras
-            // automatically — the user never types a stream name.
-            config.autoPopulateCameras(from: names)
-        }
     }
 
     private var header: some View {
@@ -64,23 +74,20 @@ struct OnboardingView: View {
             ZStack {
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
                     .fill(Theme.brandGradient)
-                    .frame(width: 84, height: 84)
+                    .frame(width: 72, height: 72)
                 Image(systemName: "eye.fill")
-                    .font(.system(size: 38, weight: .bold))
+                    .font(.system(size: 32, weight: .bold))
                     .foregroundStyle(.white)
             }
             .shadow(color: Theme.accent.opacity(0.4), radius: 18, y: 8)
-            Text("Cribsight")
-                .font(.largeTitle.bold())
+            Text("Set up Cribsight")
+                .font(.title.bold())
                 .foregroundStyle(Theme.textPrimary)
-            Text("Your multi-camera nursery monitor")
-                .font(.subheadline)
-                .foregroundStyle(Theme.textSecondary)
         }
-        .padding(.top, 24)
+        .padding(.top, 16)
     }
 
-    // MARK: Server / connection
+    // MARK: Connection
 
     private var serverCard: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -139,26 +146,33 @@ struct OnboardingView: View {
         .glassCard()
     }
 
-    // MARK: Cameras
+    // MARK: Camera checklist
 
     private var camerasCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Cameras").font(.headline).foregroundStyle(Theme.textPrimary)
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("Choose cameras").font(.headline).foregroundStyle(Theme.textPrimary)
+                Spacer()
+                if !catalog.names.isEmpty {
+                    Text("\(selected.count) selected")
+                        .font(.caption).foregroundStyle(Theme.textTertiary)
+                }
+            }
 
-            if config.settings.cameras.isEmpty {
-                Text("Connect to Frigate above — your cameras will appear here automatically.")
+            if catalog.names.isEmpty {
+                Text("Connect to Frigate above and your cameras will appear here to pick from.")
                     .font(.caption)
                     .foregroundStyle(Theme.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                Text("Found these. Tap a name to rename it, and flag any ceiling fisheye cameras so they get the live dewarp.")
+                Text("Tap the cameras you want to watch. Flag any ceiling fisheye so it gets the live dewarp.")
                     .font(.caption)
                     .foregroundStyle(Theme.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
 
-                ForEach($config.settings.cameras) { $cam in
-                    cameraRow($cam)
-                    if cam.id != config.settings.cameras.last?.id {
+                ForEach(catalog.names, id: \.self) { name in
+                    cameraPickRow(name)
+                    if name != catalog.names.last {
                         Divider().overlay(Theme.hairline)
                     }
                 }
@@ -168,30 +182,37 @@ struct OnboardingView: View {
         .glassCard()
     }
 
-    private func cameraRow(_ cam: Binding<CameraSettings>) -> some View {
-        HStack(spacing: 10) {
-            TextField("Camera name", text: cam.displayName)
-                .font(.subheadline.weight(.medium))
-                .textInputAutocapitalization(.words)
-            Spacer(minLength: 8)
-            Toggle(isOn: cam.isFisheye) {
-                Label("Fisheye", systemImage: "circle.circle")
-                    .labelStyle(.titleAndIcon)
-                    .font(.caption)
-            }
-            .toggleStyle(.button)
-            .tint(Theme.accent)
+    private func cameraPickRow(_ name: String) -> some View {
+        let isOn = selected.contains(name)
+        return HStack(spacing: 12) {
             Button {
-                config.removeCamera(cam.wrappedValue.id)
-                Haptics.rigid()
+                toggleSelected(name)
             } label: {
-                Image(systemName: "trash").font(.caption).foregroundStyle(Theme.danger)
+                HStack(spacing: 10) {
+                    Image(systemName: isOn ? "checkmark.circle.fill" : "circle")
+                        .font(.title3)
+                        .foregroundStyle(isOn ? Theme.accent : Theme.textTertiary)
+                    Text(AppConfig.prettify(name))
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(Theme.textPrimary)
+                }
+            }
+            .buttonStyle(.plain)
+            Spacer(minLength: 8)
+            if isOn {
+                Toggle(isOn: fisheyeBinding(name)) {
+                    Label("Fisheye", systemImage: "circle.circle").font(.caption)
+                }
+                .toggleStyle(.button)
+                .tint(Theme.accent)
             }
         }
     }
 
     private var startButton: some View {
         Button {
+            config.setSelectedCameras(streams: catalog.names.filter { selected.contains($0) },
+                                      fisheye: fisheyeStreams)
             config.frigatePassword = password
             onDone()
         } label: {
@@ -203,6 +224,25 @@ struct OnboardingView: View {
     }
 
     // MARK: Helpers
+
+    private func toggleSelected(_ name: String) {
+        if selected.contains(name) {
+            selected.remove(name)
+            fisheyeStreams.remove(name)
+        } else {
+            selected.insert(name)
+        }
+        Haptics.tap()
+    }
+
+    private func fisheyeBinding(_ name: String) -> Binding<Bool> {
+        Binding(
+            get: { fisheyeStreams.contains(name) },
+            set: { on in
+                if on { fisheyeStreams.insert(name) } else { fisheyeStreams.remove(name) }
+            }
+        )
+    }
 
     private func field(_ label: String, text: Binding<String>,
                        placeholder: String, keyboard: UIKeyboardType = .default) -> some View {

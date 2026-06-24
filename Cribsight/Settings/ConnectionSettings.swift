@@ -62,3 +62,18 @@ struct ConnectionSettings: Codable, Equatable {
         return true
     }
 }
+
+// Tolerant decoding: missing keys keep their defaults instead of failing.
+extension ConnectionSettings {
+    init(from decoder: Decoder) throws {
+        self.init()
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        if let v = try c.decodeIfPresent(ConnectionMode.self, forKey: .mode) { mode = v }
+        if let v = try c.decodeIfPresent(String.self, forKey: .host) { host = v }
+        if let v = try c.decodeIfPresent(Bool.self, forKey: .useTLS) { useTLS = v }
+        if let v = try c.decodeIfPresent(Int.self, forKey: .go2rtcPort) { go2rtcPort = v }
+        if let v = try c.decodeIfPresent(Int.self, forKey: .frigatePort) { frigatePort = v }
+        if let v = try c.decodeIfPresent(Int.self, forKey: .webrtcPort) { webrtcPort = v }
+        if let v = try c.decodeIfPresent(String.self, forKey: .username) { username = v }
+    }
+}

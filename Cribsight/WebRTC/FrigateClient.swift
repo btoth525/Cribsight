@@ -79,9 +79,24 @@ final class FrigateClient {
             if names.isEmpty, let cams = obj["cameras"] as? [String: Any] {
                 names = Array(cams.keys)
             }
+            // Collapse a camera's secondary/sub feeds so each camera shows once.
+            names = FrigateClient.collapseSubStreams(names)
             names.sort { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
             completion(.success(names))
         }.resume()
+    }
+
+    /// Collapse secondary/sub streams: if both "X" and "X_sub" exist, drop the
+    /// "X_sub" so each physical camera is represented once.
+    static func collapseSubStreams(_ keys: [String]) -> [String] {
+        let set = Set(keys)
+        let suffixes = ["_sub", "_substream", "_lowres", "_low", "_lq", "_sd",
+                        "_secondary", "_record", "_detect", "_audio", "_mini", "_2"]
+        return keys.filter { key in
+            !suffixes.contains { suf in
+                key.lowercased().hasSuffix(suf) && set.contains(String(key.dropLast(suf.count)))
+            }
+        }
     }
 
     private func extractToken(from http: HTTPURLResponse, url: URL) -> String? {

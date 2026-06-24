@@ -192,9 +192,7 @@ struct CameraPaneView: View {
                 let dx = Float((value.translation.width - lastDrag.width) / max(1, size.width))
                 let dy = Float((value.translation.height - lastDrag.height) / max(1, size.height))
                 lastDrag = value.translation
-                // Slow the pan as you zoom in so the scene tracks the finger ~1:1.
-                let s = 1 / max(pane.orientation.zoom, 0.2)
-                pane.applyDrag(dx: dx * 2.6 * s, dy: dy * 2.0 * s)
+                pane.applyDrag(dx: dx * 2.6, dy: dy * 2.0)
             }
             .onEnded { _ in lastDrag = .zero; pane.endInteraction() }
     }

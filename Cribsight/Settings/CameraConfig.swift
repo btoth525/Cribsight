@@ -46,11 +46,33 @@ struct DewarpParams: Codable, Equatable {
     /// "grab the scene" feel; flip if pan/tilt feels backwards on your install.
     var invertPan: Bool = false
     var invertTilt: Bool = false
-    /// The single immersive mode: a rectilinear virtual-PTZ (look around inside the
-    /// room), the projection pro fisheye apps (Reolink/Verkada/Axis) use.
-    var mode: FisheyeProjectionMode = .perspective
-    /// Opens looking into the room (tilted off the straight-down nadir) at a wide FOV.
-    var defaultOrientation: ViewOrientation = ViewOrientation(pan: 0, tilt: 0.5, zoom: 0.7)
+    /// The single immersive mode: the stereographic "planet" — shows the whole
+    /// room and lets you pinch-zoom and drag to look around inside it.
+    var mode: FisheyeProjectionMode = .littlePlanet
+    /// Opens on the full planet overview (the whole room); pinch/drag from there.
+    var defaultOrientation: ViewOrientation = .identity
+}
+
+// Tolerant decoding: start from defaults and override only the keys present in
+// the saved JSON, so adding a new field never resets a user's saved settings.
+extension DewarpParams {
+    init(from decoder: Decoder) throws {
+        self.init()
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        if let v = try c.decodeIfPresent(Float.self, forKey: .centerX) { centerX = v }
+        if let v = try c.decodeIfPresent(Float.self, forKey: .centerY) { centerY = v }
+        if let v = try c.decodeIfPresent(Float.self, forKey: .radius) { radius = v }
+        if let v = try c.decodeIfPresent(Float.self, forKey: .lensFOVDegrees) { lensFOVDegrees = v }
+        if let v = try c.decodeIfPresent(Float.self, forKey: .outputFOVDegrees) { outputFOVDegrees = v }
+        if let v = try c.decodeIfPresent(Float.self, forKey: .panoramaUpDegrees) { panoramaUpDegrees = v }
+        if let v = try c.decodeIfPresent(Float.self, forKey: .panoramaDownDegrees) { panoramaDownDegrees = v }
+        if let v = try c.decodeIfPresent(Float.self, forKey: .roll) { roll = v }
+        if let v = try c.decodeIfPresent(Bool.self, forKey: .flipHorizontal) { flipHorizontal = v }
+        if let v = try c.decodeIfPresent(Bool.self, forKey: .invertPan) { invertPan = v }
+        if let v = try c.decodeIfPresent(Bool.self, forKey: .invertTilt) { invertTilt = v }
+        if let v = try c.decodeIfPresent(FisheyeProjectionMode.self, forKey: .mode) { mode = v }
+        if let v = try c.decodeIfPresent(ViewOrientation.self, forKey: .defaultOrientation) { defaultOrientation = v }
+    }
 }
 
 /// A saved framing the user can snap to.
@@ -93,7 +115,7 @@ struct CameraSettings: Codable, Equatable, Identifiable {
             isFisheye: true,
             startMuted: false,
             crySensitivity: 0.6,
-            dewarp: DewarpParams(mode: .perspective),
+            dewarp: DewarpParams(mode: .littlePlanet),
             presets: ViewPreset.defaults
         )
     }
@@ -110,17 +132,16 @@ struct CameraSettings: Codable, Equatable, Identifiable {
 }
 
 extension ViewPreset {
-    /// Quick aims for the immersive virtual-PTZ (the only fisheye mode the app exposes).
+    /// Quick aims for the immersive planet view (the only fisheye mode the app exposes).
     static var defaults: [ViewPreset] {
         [
-            ViewPreset(name: "Overview", systemImage: "viewfinder",
-                       mode: .perspective,
-                       orientation: ViewOrientation(pan: 0, tilt: 0.5, zoom: 0.7)),
+            ViewPreset(name: "Overview", systemImage: "globe.americas",
+                       mode: .littlePlanet, orientation: .identity),
             ViewPreset(name: "Crib A", systemImage: "bed.double",
-                       mode: .perspective,
+                       mode: .littlePlanet,
                        orientation: ViewOrientation(pan: -0.6, tilt: 0.6, zoom: 1.6)),
             ViewPreset(name: "Crib B", systemImage: "bed.double.fill",
-                       mode: .perspective,
+                       mode: .littlePlanet,
                        orientation: ViewOrientation(pan: 0.6, tilt: 0.6, zoom: 1.6))
         ]
     }

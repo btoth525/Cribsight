@@ -37,12 +37,11 @@ struct DewarpUniformsData {
         if !isFisheye {
             u.mode = 0
         } else {
-            // The app ships a single immersive fisheye mode: rectilinear
-            // virtual-PTZ (shader mode 2). Ignore any legacy saved mode so older
-            // settings still render the new look. `mode` is kept in the signature
-            // for callers / future use.
+            // The app ships a single immersive fisheye mode: the stereographic
+            // "planet" (shader mode 3) — it reliably shows the whole room and is
+            // the look the user wants. Ignore any legacy saved mode.
             _ = mode
-            u.mode = 2
+            u.mode = 3
         }
         u.flip = params.flipHorizontal ? 1 : 0
         u.centerX = params.centerX

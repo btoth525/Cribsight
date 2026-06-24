@@ -53,6 +53,26 @@ struct AppSettings: Codable, Equatable {
     static let `default` = AppSettings()
 }
 
+// Tolerant decoding: start from defaults, override only keys present in the saved
+// JSON. This is the fix for "settings don't save" — adding a new field no longer
+// makes an older saved blob fail to decode and reset to defaults.
+extension AppSettings {
+    init(from decoder: Decoder) throws {
+        self.init()
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        if let v = try c.decodeIfPresent(ConnectionSettings.self, forKey: .connection) { connection = v }
+        if let v = try c.decodeIfPresent([CameraSettings].self, forKey: .cameras) { cameras = v }
+        if let v = try c.decodeIfPresent([PaneLayout].self, forKey: .layouts) { layouts = v }
+        if let v = try c.decodeIfPresent(UUID.self, forKey: .activeLayoutID) { activeLayoutID = v }
+        if let v = try c.decodeIfPresent(NightModeSettings.self, forKey: .nightMode) { nightMode = v }
+        if let v = try c.decodeIfPresent(Bool.self, forKey: .cryAlertsEnabled) { cryAlertsEnabled = v }
+        if let v = try c.decodeIfPresent(Bool.self, forKey: .cryChimeEnabled) { cryChimeEnabled = v }
+        if let v = try c.decodeIfPresent(Bool.self, forKey: .keepAwake) { keepAwake = v }
+        if let v = try c.decodeIfPresent(Bool.self, forKey: .hasCompletedOnboarding) { hasCompletedOnboarding = v }
+        if let v = try c.decodeIfPresent(Bool.self, forKey: .hasSeenTour) { hasSeenTour = v }
+    }
+}
+
 /// App-wide configuration store. Persists to UserDefaults as JSON and republishes
 /// changes to SwiftUI. The Frigate password is kept in the Keychain, not here.
 final class AppConfig: ObservableObject {
@@ -184,6 +204,23 @@ final class AppConfig: ObservableObject {
                     cam.displayName = AppConfig.prettify(stream)
                     return cam
                 }()
+        }
+    }
+
+    /// Set the cameras to exactly the chosen streams (onboarding checklist), in the
+    /// given order, flagging which are fisheye. Reuses existing camera settings when
+    /// the stream already exists so calibration/names are preserved.
+    func setSelectedCameras(streams: [String], fisheye: Set<String>) {
+        settings.cameras = streams.map { stream in
+            var cam = settings.cameras.first { $0.streamName == stream }
+                ?? {
+                    var c = CameraSettings.blank()
+                    c.streamName = stream
+                    c.displayName = AppConfig.prettify(stream)
+                    return c
+                }()
+            cam.isFisheye = fisheye.contains(stream)
+            return cam
         }
     }
 

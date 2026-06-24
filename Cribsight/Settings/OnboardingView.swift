@@ -6,6 +6,7 @@ struct OnboardingView: View {
     @ObservedObject var config: AppConfig
     @StateObject private var catalog = StreamCatalog()
     @State private var password: String = ""
+    @State private var didPrepare = false
     var onDone: () -> Void
 
     private var connection: ConnectionSettings { config.settings.connection }
@@ -44,6 +45,17 @@ struct OnboardingView: View {
         .onAppear {
             config.settings.connection.mode = .frigate
             password = config.frigatePassword ?? ""
+            if !didPrepare {
+                didPrepare = true
+                // Fresh setup: drop the placeholder seed cameras so the list stays
+                // empty until Frigate hands back the real ones.
+                config.settings.cameras = []
+            }
+        }
+        .onChange(of: catalog.names) { _, names in
+            // As soon as Frigate hands back the camera list, build the cameras
+            // automatically — the user never types a stream name.
+            config.autoPopulateCameras(from: names)
         }
     }
 
@@ -131,21 +143,24 @@ struct OnboardingView: View {
 
     private var camerasCard: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Text("Cameras").font(.headline).foregroundStyle(Theme.textPrimary)
-                Spacer()
-                Button {
-                    config.addCamera(.blank())
-                    Haptics.tap()
-                } label: {
-                    Label("Add", systemImage: "plus").font(.subheadline.weight(.semibold))
-                }
-            }
+            Text("Cameras").font(.headline).foregroundStyle(Theme.textPrimary)
 
-            ForEach($config.settings.cameras) { $cam in
-                cameraRow($cam)
-                if cam.id != config.settings.cameras.last?.id {
-                    Divider().overlay(Theme.hairline)
+            if config.settings.cameras.isEmpty {
+                Text("Connect to Frigate above — your cameras will appear here automatically.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("Found these. Tap a name to rename it, and flag any ceiling fisheye cameras so they get the live dewarp.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                ForEach($config.settings.cameras) { $cam in
+                    cameraRow($cam)
+                    if cam.id != config.settings.cameras.last?.id {
+                        Divider().overlay(Theme.hairline)
+                    }
                 }
             }
         }
@@ -154,26 +169,24 @@ struct OnboardingView: View {
     }
 
     private func cameraRow(_ cam: Binding<CameraSettings>) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text(cam.wrappedValue.displayName.isEmpty ? "Camera" : cam.wrappedValue.displayName)
-                    .font(.caption.weight(.semibold)).foregroundStyle(Theme.textTertiary)
-                Spacer()
-                if config.settings.cameras.count > 1 {
-                    Button {
-                        config.removeCamera(cam.wrappedValue.id)
-                        Haptics.rigid()
-                    } label: {
-                        Image(systemName: "trash").font(.caption).foregroundStyle(Theme.danger)
-                    }
-                }
+        HStack(spacing: 10) {
+            TextField("Camera name", text: cam.displayName)
+                .font(.subheadline.weight(.medium))
+                .textInputAutocapitalization(.words)
+            Spacer(minLength: 8)
+            Toggle(isOn: cam.isFisheye) {
+                Label("Fisheye", systemImage: "circle.circle")
+                    .labelStyle(.titleAndIcon)
+                    .font(.caption)
             }
-            field("Display name", text: cam.displayName, placeholder: "Nursery")
-            field("Stream name", text: cam.streamName, placeholder: "reolink")
-            if !catalog.names.isEmpty {
-                StreamChips(streamName: cam.streamName, available: catalog.names)
+            .toggleStyle(.button)
+            .tint(Theme.accent)
+            Button {
+                config.removeCamera(cam.wrappedValue.id)
+                Haptics.rigid()
+            } label: {
+                Image(systemName: "trash").font(.caption).foregroundStyle(Theme.danger)
             }
-            Toggle("Fisheye (dewarp)", isOn: cam.isFisheye).font(.caption)
         }
     }
 

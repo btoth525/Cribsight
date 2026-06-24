@@ -103,7 +103,7 @@ struct TourPage: Identifiable {
                  body: "Tap the grid button to arrange panes: drag to move, pull a corner to resize, tap ✕ to remove. Use a preset — Single (one camera full-screen), Side-by-side, Stacked, One-bigger, Grid, or Picture-in-picture."),
         TourPage(icon: "globe.americas.fill",
                  title: "Fisheye superpowers",
-                 body: "Got a ceiling fisheye? Pick Planet, pinch to zoom in, then drag up to rise into the room. Tap “Split fisheye” to turn that one camera into several independent close-ups — one per crib."),
+                 body: "Flag a ceiling camera as Fisheye and it's live-dewarped for you. Pinch to zoom in and drag to look around the room. Tap “Split fisheye” to turn that one camera into several independent close-ups — one per crib."),
         TourPage(icon: "waveform",
                  title: "Listen in & cry alerts",
                  body: "Tap a pane's speaker to listen; the little bars show the sound level. Cribsight flashes and buzzes when it hears sustained crying — fine-tune the sensitivity per camera in Settings."),

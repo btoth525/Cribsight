@@ -42,7 +42,7 @@ struct DewarpParams: Codable, Equatable {
     var panoramaDownDegrees: Float = 90   // down toward the floor/cribs
     var roll: Float = 0
     var flipHorizontal: Bool = false
-    var mode: FisheyeProjectionMode = .panorama
+    var mode: FisheyeProjectionMode = .littlePlanet
     var defaultOrientation: ViewOrientation = .identity
 }
 
@@ -86,7 +86,7 @@ struct CameraSettings: Codable, Equatable, Identifiable {
             isFisheye: true,
             startMuted: false,
             crySensitivity: 0.6,
-            dewarp: DewarpParams(mode: .panorama),
+            dewarp: DewarpParams(mode: .littlePlanet),
             presets: ViewPreset.defaults
         )
     }
@@ -103,21 +103,17 @@ struct CameraSettings: Codable, Equatable, Identifiable {
 }
 
 extension ViewPreset {
+    /// Planet-mode quick aims (the only fisheye mode the app exposes).
     static var defaults: [ViewPreset] {
         [
-            ViewPreset(name: "Panorama", systemImage: "panorama",
-                       mode: .panorama, orientation: .identity),
+            ViewPreset(name: "Overview", systemImage: "globe.americas",
+                       mode: .littlePlanet, orientation: .identity),
             ViewPreset(name: "Crib A", systemImage: "bed.double",
-                       mode: .perspective,
-                       orientation: ViewOrientation(pan: -0.6, tilt: 0.5, zoom: 1.2)),
+                       mode: .littlePlanet,
+                       orientation: ViewOrientation(pan: -0.6, tilt: 0.6, zoom: 1.6)),
             ViewPreset(name: "Crib B", systemImage: "bed.double.fill",
-                       mode: .perspective,
-                       orientation: ViewOrientation(pan: 0.6, tilt: 0.5, zoom: 1.2)),
-            ViewPreset(name: "Wide", systemImage: "arrow.up.left.and.arrow.down.right",
-                       mode: .perspective,
-                       orientation: ViewOrientation(pan: 0, tilt: 0.3, zoom: 0.75)),
-            ViewPreset(name: "Planet", systemImage: "globe.americas",
-                       mode: .littlePlanet, orientation: .identity)
+                       mode: .littlePlanet,
+                       orientation: ViewOrientation(pan: 0.6, tilt: 0.6, zoom: 1.6))
         ]
     }
 }

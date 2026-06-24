@@ -55,21 +55,15 @@ struct CameraSettingsView: View {
     private func fisheyeSection(_ idx: Int) -> some View {
         let cam = camBinding(idx)
         return Section {
-            Picker("Default mode", selection: cam.dewarp.mode) {
-                ForEach(FisheyeProjectionMode.allCases) { Text($0.label).tag($0) }
-            }
             calibration("Center X", cam.dewarp.centerX, 0.3...0.7)
             calibration("Center Y", cam.dewarp.centerY, 0.3...0.7)
             calibration("Radius", cam.dewarp.radius, 0.2...0.7)
             calibration("Lens FOV°", cam.dewarp.lensFOVDegrees, 120...240, fmt: "%.0f")
-            calibration("Zoom FOV°", cam.dewarp.outputFOVDegrees, 50...140, fmt: "%.0f")
-            calibration("Pano top°", cam.dewarp.panoramaUpDegrees, -20...40, fmt: "%.0f")
-            calibration("Pano bottom°", cam.dewarp.panoramaDownDegrees, 40...100, fmt: "%.0f")
             Toggle("Flip horizontally", isOn: cam.dewarp.flipHorizontal)
         } header: {
             Text("Fisheye calibration")
         } footer: {
-            Text("Dial these in so the circular image fills the dewarp. Changes apply when you close Settings.")
+            Text("Dial Center/Radius so the circular image fills the view, and Lens FOV to match your lens (≈180–200°). Pinch to zoom and drag to look around live.")
         }
     }
 

@@ -112,14 +112,14 @@ struct LayoutEditorBar: View {
     /// virtual PTZ aimed at a different crib.
     private func splitFisheye() {
         guard let fish = vm.config.cameras.first(where: { $0.isFisheye }) else { return }
-        let cribA = ViewOrientation(pan: -0.6, tilt: 0.5, zoom: 1.2)
-        let cribB = ViewOrientation(pan: 0.6, tilt: 0.5, zoom: 1.2)
+        let cribA = ViewOrientation(pan: -0.6, tilt: 0.6, zoom: 1.6)
+        let cribB = ViewOrientation(pan: 0.6, tilt: 0.6, zoom: 1.6)
         var layout = vm.activeLayout
         layout.slots = [
             LayoutSlot(cameraID: fish.id, x: 0, y: 0, width: 0.5, height: 1,
-                       view: SlotView(mode: .perspective, orientation: cribA)),
+                       view: SlotView(mode: .littlePlanet, orientation: cribA)),
             LayoutSlot(cameraID: fish.id, x: 0.5, y: 0, width: 0.5, height: 1,
-                       view: SlotView(mode: .perspective, orientation: cribB))
+                       view: SlotView(mode: .littlePlanet, orientation: cribB))
         ]
         vm.commitLayout(layout)
         Haptics.selection()

@@ -169,6 +169,37 @@ final class AppConfig: ObservableObject {
         settings.cameras.append(camera)
     }
 
+    /// Replace the camera list with the streams discovered from Frigate, so the
+    /// user doesn't assign anything by hand. Existing cameras whose stream still
+    /// exists keep their settings (display name, fisheye flag, calibration);
+    /// brand-new streams get an auto-named camera.
+    func autoPopulateCameras(from streams: [String]) {
+        let names = streams.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        guard !names.isEmpty else { return }
+        settings.cameras = names.map { stream in
+            settings.cameras.first { $0.streamName == stream }
+                ?? {
+                    var cam = CameraSettings.blank()
+                    cam.streamName = stream
+                    cam.displayName = AppConfig.prettify(stream)
+                    return cam
+                }()
+        }
+    }
+
+    /// "front_door" / "garage-cam" → "Front Door" / "Garage Cam".
+    static func prettify(_ stream: String) -> String {
+        stream
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: "-", with: " ")
+            .split(separator: " ")
+            .map { word -> String in
+                guard let first = word.first else { return "" }
+                return first.uppercased() + word.dropFirst().lowercased()
+            }
+            .joined(separator: " ")
+    }
+
     func removeCamera(_ id: UUID) {
         settings.cameras.removeAll { $0.id == id }
         // Prune from every layout too.

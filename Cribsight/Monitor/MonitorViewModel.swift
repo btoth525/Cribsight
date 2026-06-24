@@ -210,13 +210,14 @@ final class MonitorViewModel: ObservableObject {
     }
 
     func revealControls() {
-        guard !locked else { return }
         withAnimation(.easeOut(duration: 0.25)) { controlsVisible = true }
         scheduleControlsHide()
     }
 
     func toggleControls() {
-        if locked || editingLayout { return }
+        if editingLayout { return }
+        // When locked, a tap just briefly re-shows the "Locked" hint, then it fades.
+        if locked { revealControls(); return }
         if controlsVisible {
             withAnimation(.easeIn(duration: 0.25)) { controlsVisible = false }
             controlsHideWork?.cancel()
@@ -229,7 +230,7 @@ final class MonitorViewModel: ObservableObject {
         guard !editingLayout else { return }
         controlsHideWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
-            guard let self = self, !self.locked, !self.editingLayout else { return }
+            guard let self = self, !self.editingLayout else { return }
             withAnimation(.easeIn(duration: 0.4)) { self.controlsVisible = false }
         }
         controlsHideWork = work
@@ -239,8 +240,9 @@ final class MonitorViewModel: ObservableObject {
     func setLocked(_ locked: Bool) {
         self.locked = locked
         if locked { editingLayout = false }
-        withAnimation(.easeInOut(duration: 0.3)) { controlsVisible = !locked }
-        if !locked { scheduleControlsHide() }
+        // Show the hint/controls briefly, then they fade for a clean full-bleed view.
+        withAnimation(.easeInOut(duration: 0.3)) { controlsVisible = true }
+        scheduleControlsHide()
         Haptics.rigid()
     }
 

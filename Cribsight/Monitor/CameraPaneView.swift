@@ -59,20 +59,25 @@ struct CameraPaneView: View {
     @ViewBuilder
     private func overlays(geo: GeometryProxy) -> some View {
         VStack {
+            // Top: label (left), and status + per-pane controls (right). Keeping the
+            // controls up here means they never collide with the global control bar
+            // that floats over the bottom-center on a side-by-side layout.
             HStack(alignment: .top) {
                 labelBadge
                 Spacer()
-                statusBadge
+                VStack(alignment: .trailing, spacing: 8) {
+                    statusBadge
+                    if controlsVisible {
+                        quickControls(geo: geo)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                    }
+                }
             }
             Spacer()
-            HStack(alignment: .bottom) {
+            HStack {
                 VUMeter(level: min(1, pane.stats.audioLevel * 6))
                     .opacity(pane.isMuted ? 0.4 : 1)
                 Spacer()
-                if controlsVisible {
-                    quickControls(geo: geo)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
             }
         }
         .animation(.easeInOut(duration: 0.25), value: controlsVisible)
@@ -109,21 +114,25 @@ struct CameraPaneView: View {
     }
 
     private func quickControls(geo: GeometryProxy) -> some View {
-        HStack(spacing: 8) {
+        // On a small tile show only the essentials so the row never overflows.
+        let compact = geo.size.width < 240
+        return HStack(spacing: 8) {
             GlassIconButton(systemName: pane.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
-                            active: !pane.isMuted, size: 42) {
+                            active: !pane.isMuted, size: 40) {
                 pane.toggleMute()
             }
-            if pane.camera.isFisheye {
-                GlassIconButton(systemName: "arrow.counterclockwise", size: 42) {
+            if !compact && pane.camera.isFisheye {
+                GlassIconButton(systemName: "arrow.counterclockwise", size: 40) {
                     pane.resetView()
                 }
             }
-            GlassIconButton(systemName: "camera.fill", size: 42) {
-                takeSnapshot(size: geo.size)
+            if !compact {
+                GlassIconButton(systemName: "camera.fill", size: 40) {
+                    takeSnapshot(size: geo.size)
+                }
             }
             GlassIconButton(systemName: isFullscreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
-                            size: 42) {
+                            size: 40) {
                 onToggleFullscreen()
             }
         }

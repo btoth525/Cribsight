@@ -48,8 +48,8 @@ struct LayoutCanvas: View {
             ZStack {
                 CameraPaneView(pane: pane,
                                isFullscreen: false,
-                               controlsVisible: !vm.editingLayout && vm.controlsVisible,
-                               interactive: !vm.editingLayout,
+                               controlsVisible: !vm.editingLayout && !vm.locked && vm.controlsVisible,
+                               interactive: !vm.editingLayout && !vm.locked,
                                onToggleFullscreen: { vm.toggleFullscreen(pane.id) },
                                onToast: { vm.showToast($0) })
                 if vm.editingLayout {

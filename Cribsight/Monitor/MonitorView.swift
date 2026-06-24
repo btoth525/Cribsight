@@ -19,7 +19,10 @@ struct MonitorView: View {
 
             bottomControls
 
-            if vm.locked { lockChip }
+            if vm.locked && vm.controlsVisible {
+                lockChip
+                    .transition(.opacity)
+            }
 
             if let toast = vm.toast {
                 VStack {
@@ -55,7 +58,8 @@ struct MonitorView: View {
                let pane = vm.panes.first(where: { $0.id == id }) {
                 CameraPaneView(pane: pane,
                                isFullscreen: true,
-                               controlsVisible: vm.controlsVisible,
+                               controlsVisible: vm.controlsVisible && !vm.locked,
+                               interactive: !vm.locked,
                                onToggleFullscreen: { vm.toggleFullscreen(pane.id) },
                                onToast: { vm.showToast($0) })
                     .ignoresSafeArea()

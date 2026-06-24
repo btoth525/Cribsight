@@ -6,6 +6,7 @@ struct SettingsView: View {
     @ObservedObject var config: AppConfig
     @StateObject private var catalog = StreamCatalog()
     @State private var password: String = ""
+    @State private var showTour = false
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -34,6 +35,12 @@ struct SettingsView: View {
         }
         .preferredColorScheme(.dark)
         .tint(Theme.accent)
+        .fullScreenCover(isPresented: $showTour) {
+            TourView {
+                config.settings.hasSeenTour = true
+                showTour = false
+            }
+        }
         .onAppear {
             config.settings.connection.mode = .frigate
             password = config.frigatePassword ?? ""
@@ -197,11 +204,17 @@ struct SettingsView: View {
 
     private var helpSection: some View {
         Section {
+            Button {
+                Haptics.tap()
+                showTour = true
+            } label: {
+                Label("How to use Cribsight", systemImage: "questionmark.circle")
+            }
             Label("Lock the app with iOS Guided Access (triple-click the side button) to use it as a kiosk.",
                   systemImage: "lock.shield")
                 .font(.footnote).foregroundStyle(Theme.textSecondary)
         } header: {
-            Text("Kiosk")
+            Text("Help & Kiosk")
         } footer: {
             Text("Cribsight · v2 · LAN-only, no cloud.")
         }

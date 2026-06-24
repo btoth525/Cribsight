@@ -48,6 +48,7 @@ struct AppSettings: Codable, Equatable {
     var cryChimeEnabled: Bool = false
     var keepAwake: Bool = true
     var hasCompletedOnboarding: Bool = false
+    var hasSeenTour: Bool = false
 
     static let `default` = AppSettings()
 }
@@ -148,10 +149,16 @@ final class AppConfig: ObservableObject {
 
     func selectLayout(_ id: UUID) { settings.activeLayoutID = id }
 
-    /// Ensure there's at least one saved layout (used after onboarding).
+    /// Ensure there's at least one saved layout (used after onboarding). Only
+    /// cameras that actually have a stream become panes, so a one-camera setup
+    /// opens as a single full-screen pane (not a dead second one).
     func ensureDefaultLayout() {
         guard settings.layouts.isEmpty else { return }
-        let layout = PaneLayout.auto(cameraIDs: settings.cameras.map { $0.id }, name: "Default")
+        var ids = settings.cameras
+            .filter { !$0.streamName.trimmingCharacters(in: .whitespaces).isEmpty }
+            .map { $0.id }
+        if ids.isEmpty { ids = settings.cameras.map { $0.id } }
+        let layout = PaneLayout.auto(cameraIDs: ids, name: "Default")
         settings.layouts = [layout]
         settings.activeLayoutID = layout.id
     }

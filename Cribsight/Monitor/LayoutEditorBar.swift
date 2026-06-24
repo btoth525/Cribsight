@@ -5,12 +5,13 @@ import SwiftUI
 struct LayoutEditorBar: View {
     @ObservedObject var vm: MonitorViewModel
 
-    private enum Preset { case columns, rows, spotlight, grid, pip }
+    private enum Preset { case single, columns, rows, spotlight, grid, pip }
 
     var body: some View {
         VStack(spacing: 10) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
+                    presetChip("Single", "rectangle") { apply(.single) }
                     presetChip("Side by side", "rectangle.split.2x1") { apply(.columns) }
                     presetChip("Stacked", "square.split.1x2") { apply(.rows) }
                     presetChip("One bigger", "rectangle.lefthalf.inset.filled") { apply(.spotlight) }
@@ -86,6 +87,7 @@ struct LayoutEditorBar: View {
         let ids = placedCameraIDs()
         var layout: PaneLayout
         switch preset {
+        case .single:    layout = .columns(cameraIDs: Array(ids.prefix(1)))
         case .columns:   layout = .columns(cameraIDs: ids)
         case .rows:      layout = .rows(cameraIDs: ids)
         case .spotlight: layout = .spotlight(cameraIDs: ids)

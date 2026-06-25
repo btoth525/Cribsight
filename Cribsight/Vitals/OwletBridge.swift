@@ -120,18 +120,21 @@ enum Coerce {
     static func int(_ v: Any?) -> Int? {
         switch v {
         case let n as Int: return n
-        case let d as Double: return Int(d.rounded())
+        case let d as Double: return d.isFinite ? Int(d.rounded()) : nil
         case let n as NSNumber: return n.intValue
-        case let s as String: return Int(s) ?? Double(s).map { Int($0.rounded()) }
+        case let s as String:
+            if let i = Int(s) { return i }
+            if let d = Double(s), d.isFinite { return Int(d.rounded()) }
+            return nil
         default: return nil
         }
     }
     static func double(_ v: Any?) -> Double? {
         switch v {
-        case let d as Double: return d
+        case let d as Double: return d.isFinite ? d : nil
         case let n as Int: return Double(n)
-        case let n as NSNumber: return n.doubleValue
-        case let s as String: return Double(s)
+        case let n as NSNumber: return n.doubleValue.isFinite ? n.doubleValue : nil
+        case let s as String: return Double(s).flatMap { $0.isFinite ? $0 : nil }
         default: return nil
         }
     }
@@ -200,7 +203,7 @@ final class VitalsService: ObservableObject {
         URLSession.shared.dataTask(with: req) { [weak self] data, response, _ in
             guard let self = self else { return }
             let ok = (response as? HTTPURLResponse).map { (200..<300).contains($0.statusCode) } ?? false
-            let dict = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? nil
+            let dict = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
             DispatchQueue.main.async {
                 self.reachable = ok && dict != nil
                 guard let dict else { return }

@@ -17,6 +17,10 @@ struct MonitorView: View {
 
             paneLayer
 
+            if vm.panes.isEmpty {
+                emptyState
+            }
+
             bottomControls
 
             if vm.locked && vm.controlsVisible {
@@ -92,6 +96,27 @@ struct MonitorView: View {
             .padding(.bottom, 18)
             .transition(.move(edge: .bottom).combined(with: .opacity))
         }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "video.slash")
+                .font(.system(size: 42, weight: .semibold))
+                .foregroundStyle(Theme.textTertiary)
+            Text("No cameras yet")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(Theme.textPrimary)
+            Text("Open Settings to connect to Frigate and add your cameras.")
+                .font(.subheadline)
+                .foregroundStyle(Theme.textSecondary)
+                .multilineTextAlignment(.center)
+            Button { showSettings = true } label: {
+                Label("Open Settings", systemImage: "gearshape.fill")
+            }
+            .glassButton(prominent: true)
+            .padding(.top, 4)
+        }
+        .padding(40)
     }
 
     private var lockChip: some View {

@@ -16,7 +16,7 @@ enum NightModeTrigger: Int, Codable, CaseIterable, Identifiable {
 
 struct NightModeSettings: Codable, Equatable {
     var trigger: NightModeTrigger = .scheduled
-    var dim: Double = 0.55
+    var dim: Double = 0.4
     var warmth: Double = 0.7
     var startHour: Int = 19   // 7pm
     var endHour: Int = 7      // 7am

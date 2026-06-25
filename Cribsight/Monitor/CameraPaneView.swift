@@ -115,11 +115,14 @@ struct CameraPaneView: View {
 
     private func quickControls(geo: GeometryProxy) -> some View {
         // On a small tile show only the essentials so the row never overflows.
+        let tiny = geo.size.width < 160
         let compact = geo.size.width < 240
         return HStack(spacing: 8) {
-            GlassIconButton(systemName: pane.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
-                            active: !pane.isMuted, size: 40) {
-                pane.toggleMute()
+            if !tiny {
+                GlassIconButton(systemName: pane.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
+                                active: !pane.isMuted, size: 40) {
+                    pane.toggleMute()
+                }
             }
             if !compact && pane.camera.isFisheye {
                 GlassIconButton(systemName: "arrow.counterclockwise", size: 40) {

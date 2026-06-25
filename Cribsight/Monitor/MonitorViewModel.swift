@@ -22,6 +22,7 @@ final class MonitorViewModel: ObservableObject {
     private var sources: [UUID: CameraSource] = [:]
     /// Frigate auth session (nil in Direct mode).
     private var frigateClient: FrigateClient?
+    private var loginInFlight = false
     private lazy var tokenProvider: () -> String? = { [weak self] in self?.frigateClient?.token }
 
     private var nightTimer: Timer?
@@ -48,6 +49,7 @@ final class MonitorViewModel: ObservableObject {
         UIApplication.shared.isIdleTimerDisabled = config.settings.keepAwake
         connectThenStartSources()
         startNightTimer()
+        evaluateNightMode()
         scheduleControlsHide()
     }
 
@@ -61,6 +63,9 @@ final class MonitorViewModel: ObservableObject {
     func pauseForBackground() {
         sources.values.forEach { $0.stop() }
         nightTimer?.invalidate(); nightTimer = nil
+        // Symmetric with resume: don't leak the keep-awake or audio session.
+        UIApplication.shared.isIdleTimerDisabled = false
+        AudioController.shared.deactivate()
     }
 
     func resumeFromForeground() {
@@ -80,12 +85,18 @@ final class MonitorViewModel: ObservableObject {
             sources.values.forEach { $0.start() }
             return
         }
+        // Avoid a duplicate login on cold launch, where both RootView.onAppear and
+        // scenePhase==.active fire before the first login returns. On resume from
+        // background we deliberately re-login for a fresh token.
+        guard !loginInFlight else { return }
+        loginInFlight = true
         let conn = config.settings.connection
         let client = FrigateClient(apiBase: conn.apiBase)
         frigateClient = client
         client.login(username: conn.username, password: config.frigatePassword ?? "") { [weak self] result in
             DispatchQueue.main.async {
                 guard let self = self else { return }
+                self.loginInFlight = false
                 switch result {
                 case .success:
                     self.sources.values.forEach { $0.start() }

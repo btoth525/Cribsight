@@ -21,6 +21,8 @@ final class DewarpRenderer: NSObject, MTKViewDelegate {
     private let queue: MTLCommandQueue
     private var pipeline: MTLRenderPipelineState?
     private var textureCache: CVMetalTextureCache?
+    /// Only one MTKView may drive this renderer at a time.
+    private weak var activeView: MTKView?
 
     init(sink: FrameSink) {
         guard let device = MTLCreateSystemDefaultDevice(),
@@ -35,8 +37,15 @@ final class DewarpRenderer: NSObject, MTKViewDelegate {
         buildPipeline()
     }
 
-    /// Configure an MTKView to be driven by this renderer.
+    /// Configure an MTKView to be driven by this renderer. Detaches any previously
+    /// attached view so two MTKViews (e.g. during the fullscreen transition) never
+    /// draw through the same renderer at once.
     func configure(_ view: MTKView) {
+        if let old = activeView, old !== view {
+            old.isPaused = true
+            old.delegate = nil
+        }
+        activeView = view
         view.device = device
         view.delegate = self
         view.colorPixelFormat = .bgra8Unorm

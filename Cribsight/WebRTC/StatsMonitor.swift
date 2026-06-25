@@ -24,6 +24,10 @@ final class StatsMonitor {
 
     private var lastBytes: Double = 0
     private var lastTimestampUs: Double = 0
+    /// Last published snapshot — carried forward so a poll that omits a field
+    /// (common at 5 Hz) doesn't blink fps/resolution to 0 or feed a false-quiet
+    /// sample into cry detection.
+    private var last = PaneStats()
 
     init(client: WebRTCClient) {
         self.client = client
@@ -43,12 +47,13 @@ final class StatsMonitor {
         timer = nil
         lastBytes = 0
         lastTimestampUs = 0
+        last = PaneStats()
     }
 
     private func poll() {
         client?.statistics { [weak self] report in
             guard let self = self else { return }
-            var stats = PaneStats()
+            var stats = self.last   // carry forward; only overwrite fields present this tick
 
             for (_, s) in report.statistics where s.type == "inbound-rtp" {
                 let kind = (s.values["kind"] as? String) ?? (s.values["mediaType"] as? String)
@@ -76,6 +81,7 @@ final class StatsMonitor {
                 }
             }
 
+            self.last = stats
             DispatchQueue.main.async {
                 self.onUpdate?(stats)
             }

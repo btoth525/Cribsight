@@ -15,7 +15,9 @@ final class AudioController {
     func activate() {
         let session = AVAudioSession.sharedInstance()
         do {
-            try session.setCategory(.playback, mode: .default, options: [.duckOthers])
+            // Mix with other audio so a white-noise / sound-machine app keeps
+            // playing while you listen in (don't duck it for hours).
+            try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
             try session.setActive(true)
         } catch {
             // Non-fatal; video still works without audio.

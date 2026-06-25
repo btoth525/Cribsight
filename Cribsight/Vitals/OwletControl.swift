@@ -32,8 +32,8 @@ struct OwletControl {
 
     /// `POST /api/play/<camera>`  body `{"file": "<name>"}` — plays a sound on the
     /// camera speaker.
-    func play(camera: String, file: String, completion: @escaping (Bool) -> Void = { _ in }) {
-        guard let url = URL(string: base + "/api/play/" + encode(camera)) else { completion(false); return }
+    func play(camera: String, file: String, completion: @escaping (Bool, String?) -> Void = { _, _ in }) {
+        guard let url = URL(string: base + "/api/play/" + encode(camera)) else { completion(false, nil); return }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -41,35 +41,37 @@ struct OwletControl {
         send(req, completion)
     }
 
-    /// `DELETE /api/sounds/<name>`
-    func deleteSound(_ name: String, completion: @escaping (Bool) -> Void = { _ in }) {
-        guard let url = URL(string: base + "/api/sounds/" + encode(name)) else { completion(false); return }
+    /// `DELETE /api/sounds/<name>` (filename is URL-encoded into the path).
+    func deleteSound(_ name: String, completion: @escaping (Bool, String?) -> Void = { _, _ in }) {
+        guard let url = URL(string: base + "/api/sounds/" + encode(name)) else { completion(false, nil); return }
         var req = URLRequest(url: url)
         req.httpMethod = "DELETE"
         send(req, completion)
     }
 
-    /// `POST /api/sounds` — multipart upload of a new sound file.
+    /// `POST /api/sounds` — multipart upload of a new sound file (field name `file`).
     func uploadSound(filename: String, data: Data, mime: String,
-                     completion: @escaping (Bool) -> Void = { _ in }) {
-        guard let url = URL(string: base + "/api/sounds") else { completion(false); return }
+                     completion: @escaping (Bool, String?) -> Void = { _, _ in }) {
+        guard let url = URL(string: base + "/api/sounds") else { completion(false, nil); return }
         let req = multipart(url: url, field: "file", filename: filename, data: data, mime: mime)
         send(req, completion)
     }
 
     // MARK: Two-way talk
 
-    /// `POST /api/talk/<camera>` — multipart audio clip pushed to the speaker.
+    /// `POST /api/talk/<camera>` — multipart audio clip pushed to the speaker. The
+    /// bridge transcodes any ffmpeg-readable input, so AAC/m4a is fine. The form
+    /// field name is `audio`. Fails with 409 if the camera stream isn't live yet.
     func talk(camera: String, audio: Data, filename: String, mime: String,
-              completion: @escaping (Bool) -> Void = { _ in }) {
-        guard let url = URL(string: base + "/api/talk/" + encode(camera)) else { completion(false); return }
-        let req = multipart(url: url, field: "file", filename: filename, data: audio, mime: mime)
+              completion: @escaping (Bool, String?) -> Void = { _, _ in }) {
+        guard let url = URL(string: base + "/api/talk/" + encode(camera)) else { completion(false, nil); return }
+        let req = multipart(url: url, field: "audio", filename: filename, data: audio, mime: mime)
         send(req, completion)
     }
 
     /// `POST /api/talk/<camera>/stop`
-    func stopTalk(camera: String, completion: @escaping (Bool) -> Void = { _ in }) {
-        guard let url = URL(string: base + "/api/talk/" + encode(camera) + "/stop") else { completion(false); return }
+    func stopTalk(camera: String, completion: @escaping (Bool, String?) -> Void = { _, _ in }) {
+        guard let url = URL(string: base + "/api/talk/" + encode(camera) + "/stop") else { completion(false, nil); return }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         send(req, completion)
@@ -81,11 +83,23 @@ struct OwletControl {
         s.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? s
     }
 
-    private func send(_ req: URLRequest, _ completion: @escaping (Bool) -> Void) {
-        URLSession.shared.dataTask(with: req) { _, response, error in
-            let ok = error == nil
-                && ((response as? HTTPURLResponse).map { (200..<300).contains($0.statusCode) } ?? false)
-            DispatchQueue.main.async { completion(ok) }
+    /// Run a request; report success plus, on failure, the bridge's own error
+    /// message (it returns `{"ok":false,"error":"…"}` for cases like a stream that
+    /// isn't live yet) so the UI can show something actionable.
+    private func send(_ req: URLRequest, _ completion: @escaping (Bool, String?) -> Void) {
+        URLSession.shared.dataTask(with: req) { data, response, error in
+            if let error = error {
+                DispatchQueue.main.async { completion(false, error.localizedDescription) }
+                return
+            }
+            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+            let ok = (200..<300).contains(code)
+            var message: String?
+            if !ok, let data,
+               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                message = (obj["error"] as? String) ?? (obj["message"] as? String)
+            }
+            DispatchQueue.main.async { completion(ok, message) }
         }.resume()
     }
 

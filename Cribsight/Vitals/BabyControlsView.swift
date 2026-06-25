@@ -105,9 +105,9 @@ struct BabyControlsView: View {
     private func sendTalk() {
         guard let clip = recorder.stop() else { flash("Nothing recorded"); return }
         sending = true
-        control.talk(camera: camera, audio: clip.data, filename: clip.filename, mime: clip.mime) { ok in
+        control.talk(camera: camera, audio: clip.data, filename: clip.filename, mime: clip.mime) { ok, message in
             sending = false
-            flash(ok ? "Sent to camera" : "Couldn't reach the bridge")
+            flash(ok ? "Sent to camera" : (message ?? "Couldn't reach the bridge"))
         }
     }
 
@@ -154,17 +154,17 @@ struct BabyControlsView: View {
     private func play(_ sound: OwletControl.Sound) {
         Haptics.tap()
         flash("Playing \(sound.displayName)…")
-        control.play(camera: camera, file: sound.name) { ok in
-            if !ok { flash("Couldn't play \(sound.displayName)") }
+        control.play(camera: camera, file: sound.name) { ok, message in
+            if !ok { flash(message ?? "Couldn't play \(sound.displayName)") }
         }
     }
 
     private func deleteSounds(_ offsets: IndexSet) {
         let targets = offsets.map { sounds[$0] }
         for sound in targets {
-            control.deleteSound(sound.name) { ok in
+            control.deleteSound(sound.name) { ok, message in
                 if ok { sounds.removeAll { $0.id == sound.id } }
-                flash(ok ? "Removed \(sound.displayName)" : "Couldn't remove \(sound.displayName)")
+                flash(ok ? "Removed \(sound.displayName)" : (message ?? "Couldn't remove \(sound.displayName)"))
             }
         }
     }
@@ -187,18 +187,20 @@ struct BabyControlsView: View {
         flash("Uploading \(url.lastPathComponent)…")
         control.uploadSound(filename: url.lastPathComponent,
                             data: data,
-                            mime: Self.mimeType(for: url.pathExtension)) { ok in
-            flash(ok ? "Added \(url.lastPathComponent)" : "Upload failed")
+                            mime: Self.mimeType(for: url.pathExtension)) { ok, message in
+            flash(ok ? "Added \(url.lastPathComponent)" : (message ?? "Upload failed"))
             if ok { loadSounds() }
         }
     }
 
     private static func mimeType(for ext: String) -> String {
+        // The bridge accepts .mp3 .wav .m4a .aac .ogg .flac.
         switch ext.lowercased() {
         case "mp3": return "audio/mpeg"
         case "wav": return "audio/wav"
         case "m4a", "aac": return "audio/m4a"
         case "ogg": return "audio/ogg"
+        case "flac": return "audio/flac"
         case "caf": return "audio/x-caf"
         default: return "application/octet-stream"
         }

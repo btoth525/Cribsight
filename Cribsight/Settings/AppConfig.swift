@@ -169,6 +169,25 @@ final class AppConfig: ObservableObject {
 
     func selectLayout(_ id: UUID) { settings.activeLayoutID = id }
 
+    /// Save the current arrangement as a brand-new named view and make it active.
+    @discardableResult
+    func saveCurrentAsNewLayout(name: String) -> UUID {
+        var layout = activeLayout
+        layout.id = UUID()
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        layout.name = trimmed.isEmpty ? "View \(settings.layouts.count + 1)" : trimmed
+        saveLayout(layout)
+        return layout.id
+    }
+
+    /// Rename a saved view.
+    func renameLayout(_ id: UUID, to name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty,
+              let i = settings.layouts.firstIndex(where: { $0.id == id }) else { return }
+        settings.layouts[i].name = trimmed
+    }
+
     /// Ensure there's at least one saved layout (used after onboarding). Only
     /// cameras that actually have a stream become panes, so a one-camera setup
     /// opens as a single full-screen pane (not a dead second one).

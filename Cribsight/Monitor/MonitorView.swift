@@ -6,6 +6,8 @@ import SwiftUI
 struct MonitorView: View {
     @ObservedObject var vm: MonitorViewModel
     @State private var showSettings = false
+    @State private var showSaveView = false
+    @State private var newViewName = ""
 
     private var fisheyePane: PaneViewModel? {
         vm.panes.first(where: { $0.camera.isFisheye })
@@ -51,6 +53,18 @@ struct MonitorView: View {
         .sheet(isPresented: $showSettings, onDismiss: { vm.applySettingsChange() }) {
             SettingsView(config: vm.config)
         }
+        .alert("Save view", isPresented: $showSaveView) {
+            TextField("View name", text: $newViewName)
+            Button("Save") {
+                vm.config.saveCurrentAsNewLayout(name: newViewName)
+                vm.rebuildPanes()
+                newViewName = ""
+                vm.showToast("View saved")
+            }
+            Button("Cancel", role: .cancel) { newViewName = "" }
+        } message: {
+            Text("Name this camera arrangement so you can switch back to it anytime from the Views menu.")
+        }
     }
 
     // MARK: Panes
@@ -80,7 +94,7 @@ struct MonitorView: View {
         if vm.editingLayout {
             VStack {
                 Spacer()
-                LayoutEditorBar(vm: vm)
+                LayoutEditorBar(vm: vm, onSaveView: { showSaveView = true })
             }
             .padding(.bottom, 18)
             .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -91,7 +105,9 @@ struct MonitorView: View {
                    vm.fullscreenPaneID == nil || vm.fullscreenPaneID == fisheye.id {
                     PresetPicker(pane: fisheye)
                 }
-                ControlBar(vm: vm, onOpenSettings: { showSettings = true })
+                ControlBar(vm: vm,
+                           onOpenSettings: { showSettings = true },
+                           onSaveView: { showSaveView = true })
             }
             .padding(.bottom, 18)
             .transition(.move(edge: .bottom).combined(with: .opacity))

@@ -4,6 +4,7 @@ import SwiftUI
 /// and Done. Drag/resize/remove happen on the panes themselves (`LayoutCanvas`).
 struct LayoutEditorBar: View {
     @ObservedObject var vm: MonitorViewModel
+    var onSaveView: () -> Void
 
     private enum Preset { case single, columns, rows, spotlight, grid, pip }
 
@@ -27,8 +28,13 @@ struct LayoutEditorBar: View {
             HStack(spacing: 10) {
                 addMenu
                 Spacer()
+                Button { onSaveView() } label: {
+                    Label("Save view", systemImage: "square.and.arrow.down")
+                        .font(.subheadline.weight(.semibold))
+                }
+                .glassButton()
                 Button { vm.setEditingLayout(false) } label: {
-                    Text("Done").frame(maxWidth: 120)
+                    Text("Done").frame(maxWidth: 90)
                 }
                 .glassButton(prominent: true)
             }

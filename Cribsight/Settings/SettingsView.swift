@@ -7,6 +7,8 @@ struct SettingsView: View {
     @StateObject private var catalog = StreamCatalog()
     @State private var password: String = ""
     @State private var showTour = false
+    @State private var renamingID: UUID? = nil
+    @State private var renameText = ""
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -40,6 +42,17 @@ struct SettingsView: View {
                 config.settings.hasSeenTour = true
                 showTour = false
             }
+        }
+        .alert("Rename view", isPresented: Binding(
+            get: { renamingID != nil },
+            set: { if !$0 { renamingID = nil } }
+        )) {
+            TextField("Name", text: $renameText)
+            Button("Save") {
+                if let id = renamingID { config.renameLayout(id, to: renameText) }
+                renamingID = nil
+            }
+            Button("Cancel", role: .cancel) { renamingID = nil }
         }
         .onAppear {
             config.settings.connection.mode = .frigate
@@ -176,16 +189,23 @@ struct SettingsView: View {
                     }
                 }
                 .foregroundStyle(Theme.textPrimary)
-            }
-            .onDelete { idx in
-                idx.map { config.settings.layouts[$0].id }.forEach { config.deleteLayout($0) }
+                .swipeActions(edge: .trailing) {
+                    Button(role: .destructive) {
+                        config.deleteLayout(layout.id)
+                    } label: { Label("Delete", systemImage: "trash") }
+                    Button {
+                        renameText = layout.name
+                        renamingID = layout.id
+                    } label: { Label("Rename", systemImage: "pencil") }
+                    .tint(Theme.accent)
+                }
             }
             Button {
                 let layout = PaneLayout.auto(cameraIDs: config.settings.cameras.map { $0.id },
-                                             name: "Grid \(config.settings.layouts.count + 1)")
+                                             name: "View \(config.settings.layouts.count + 1)")
                 config.saveLayout(layout); Haptics.tap()
             } label: {
-                Label("New layout from all cameras", systemImage: "plus.rectangle.on.rectangle")
+                Label("New view from all cameras", systemImage: "plus.rectangle.on.rectangle")
             }
         } header: {
             Text("Layouts")

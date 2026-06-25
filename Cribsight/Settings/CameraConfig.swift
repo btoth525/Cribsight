@@ -1,6 +1,79 @@
 import Foundation
 import CoreGraphics
 
+/// A single metric that can appear on the Baby Mode vitals HUD. The user chooses
+/// and orders these per camera (Settings → camera → HUD metrics), so the overlay
+/// shows exactly what they want to watch.
+enum VitalsField: String, Codable, CaseIterable, Identifiable {
+    case heartRate, oxygen, oxygenAvg, sleep, battery
+    case skinTemp, roomTemp, humidity, signal, movement, noise
+
+    var id: String { rawValue }
+
+    /// The default HUD for a newly paired camera.
+    static let defaultFields: [VitalsField] = [.heartRate, .oxygen, .sleep, .battery]
+
+    var label: String {
+        switch self {
+        case .heartRate: return "Heart rate"
+        case .oxygen:    return "Oxygen"
+        case .oxygenAvg:  return "Oxygen (avg)"
+        case .sleep:     return "Sleep"
+        case .battery:   return "Battery"
+        case .skinTemp:  return "Skin temp"
+        case .roomTemp:  return "Room temp"
+        case .humidity:  return "Humidity"
+        case .signal:    return "Signal"
+        case .movement:  return "Movement"
+        case .noise:     return "Noise"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .heartRate: return "heart.fill"
+        case .oxygen:    return "lungs.fill"
+        case .oxygenAvg:  return "lungs"
+        case .sleep:     return "moon.zzz.fill"
+        case .battery:   return "battery.100"
+        case .skinTemp:  return "thermometer.medium"
+        case .roomTemp:  return "thermometer.low"
+        case .humidity:  return "humidity.fill"
+        case .signal:    return "antenna.radiowaves.left.and.right"
+        case .movement:  return "waveform.path.ecg"
+        case .noise:     return "waveform"
+        }
+    }
+
+    var unit: String {
+        switch self {
+        case .heartRate: return "bpm"
+        case .oxygen, .oxygenAvg, .humidity, .battery: return "%"
+        case .sleep, .movement: return ""
+        case .skinTemp, .roomTemp: return "°F"
+        case .signal: return "dBm"
+        case .noise: return "dB"
+        }
+    }
+
+    /// The value text for this field from a vitals sample (nil when no data).
+    func value(from v: Vitals) -> String? {
+        switch self {
+        case .heartRate: return v.heartRate.map { "\($0)" }
+        case .oxygen:    return v.oxygen.map { "\($0)" }
+        case .oxygenAvg:  return v.oxygenAvg.map { "\($0)" }
+        case .sleep:     return v.sleepShort
+        case .battery:   return v.battery.map { "\($0)" }
+        case .skinTemp:  return v.skinTemp.map { String(format: "%.0f", $0) }
+        case .roomTemp:  return v.roomTemp.map { String(format: "%.0f", $0) }
+        case .humidity:  return v.humidity.map { String(format: "%.0f", $0) }
+        case .signal:    return v.signalStrength.map { "\($0)" }
+        case .movement:  return v.movement.map { "\($0)" }
+        case .noise:     return v.noise.map { String(format: "%.0f", $0) }
+        }
+    }
+}
+
 /// How the fisheye pane is unwrapped.
 enum FisheyeProjectionMode: Int, Codable, CaseIterable, Identifiable {
     case panorama      // equirectangular strip — the ceiling-down default
@@ -99,6 +172,8 @@ struct CameraSettings: Codable, Equatable, Identifiable {
     var isOwletBridge: Bool = false
     /// Paired Owlet sock (by dsn) whose vitals show on this camera.
     var owletSockDSN: String? = nil
+    /// Which vitals appear on the live HUD, in order (user-customizable).
+    var hudFields: [VitalsField] = VitalsField.defaultFields
 
     /// Baby Mode = has live sock vitals / bridge talk + lullaby.
     var babyMode: Bool { isOwletBridge || owletSockDSN != nil }
@@ -152,6 +227,7 @@ extension CameraSettings {
         presets = try c.decodeIfPresent([ViewPreset].self, forKey: .presets) ?? []
         isOwletBridge = try c.decodeIfPresent(Bool.self, forKey: .isOwletBridge) ?? false
         owletSockDSN = try c.decodeIfPresent(String.self, forKey: .owletSockDSN)
+        hudFields = try c.decodeIfPresent([VitalsField].self, forKey: .hudFields) ?? VitalsField.defaultFields
     }
 }
 

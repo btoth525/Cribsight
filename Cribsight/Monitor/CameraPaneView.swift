@@ -15,6 +15,8 @@ struct CameraPaneView: View {
     var onToggleFullscreen: () -> Void
     var onToast: (String) -> Void
     var onShowVitals: (() -> Void)? = nil
+    /// Open the talk + lullaby controls (Owlet-bridge cameras only).
+    var onBabyControls: (() -> Void)? = nil
 
     @State private var lastDrag: CGSize = .zero
     @State private var lastZoom: CGFloat = 1
@@ -69,7 +71,7 @@ struct CameraPaneView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     labelBadge
                     if let vitals {
-                        VitalsOverlay(vitals: vitals) { onShowVitals?() }
+                        VitalsOverlay(vitals: vitals, fields: pane.camera.hudFields) { onShowVitals?() }
                             .transition(.opacity)
                     }
                 }
@@ -131,6 +133,11 @@ struct CameraPaneView: View {
                 GlassIconButton(systemName: pane.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
                                 active: !pane.isMuted, size: 40) {
                     pane.toggleMute()
+                }
+            }
+            if !tiny && pane.camera.isOwletBridge && onBabyControls != nil {
+                GlassIconButton(systemName: "music.mic", size: 40) {
+                    onBabyControls?()
                 }
             }
             if !compact && pane.camera.isFisheye {

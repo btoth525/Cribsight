@@ -17,7 +17,7 @@ struct CameraSettingsView: View {
                 if config.settings.cameras[idx].isFisheye {
                     fisheyeSection(idx)
                 }
-                if !availableSocks.isEmpty || config.settings.cameras[idx].owletSockDSN != nil {
+                if !availableSocks.isEmpty || config.settings.cameras[idx].babyMode {
                     babyVitalsSection(idx)
                 }
             } else {
@@ -73,9 +73,10 @@ struct CameraSettingsView: View {
         }
     }
 
+    @ViewBuilder
     private func babyVitalsSection(_ idx: Int) -> some View {
         let cam = camBinding(idx)
-        return Section {
+        Section {
             Picker("Owlet sock", selection: cam.owletSockDSN) {
                 Text("None").tag(String?.none)
                 ForEach(availableSocks) { sock in
@@ -87,10 +88,66 @@ struct CameraSettingsView: View {
         } footer: {
             Text("Pair an Owlet sock to overlay live heart rate, oxygen and sleep on this camera. Tap the overlay for history.")
         }
+
+        if config.settings.cameras[idx].babyMode {
+            hudFieldsSection(idx)
+        }
+    }
+
+    /// Editor for which vitals appear on the live HUD — drag to reorder, swipe to
+    /// remove, tap Add to include more.
+    private func hudFieldsSection(_ idx: Int) -> some View {
+        let fields = config.settings.cameras[idx].hudFields
+        let remaining = VitalsField.allCases.filter { !fields.contains($0) }
+        return Section {
+            if fields.isEmpty {
+                Text("No metrics — the HUD is hidden. Add one below.")
+                    .font(.caption).foregroundStyle(Theme.textSecondary)
+            }
+            ForEach(fields) { field in
+                Label(field.label, systemImage: field.icon)
+                    .foregroundStyle(Theme.textPrimary)
+            }
+            .onMove { offsets, dest in
+                var arr = config.settings.cameras[idx].hudFields
+                arr.move(fromOffsets: offsets, toOffset: dest)
+                config.settings.cameras[idx].hudFields = arr
+            }
+            .onDelete { offsets in
+                var arr = config.settings.cameras[idx].hudFields
+                arr.remove(atOffsets: offsets)
+                config.settings.cameras[idx].hudFields = arr
+            }
+            if !remaining.isEmpty {
+                Menu {
+                    ForEach(remaining) { field in
+                        Button {
+                            config.settings.cameras[idx].hudFields.append(field)
+                        } label: {
+                            Label(field.label, systemImage: field.icon)
+                        }
+                    }
+                } label: {
+                    Label("Add metric", systemImage: "plus.circle.fill")
+                }
+            }
+        } header: {
+            HStack {
+                Text("HUD metrics")
+                Spacer()
+                EditButton().font(.subheadline)
+            }
+        } footer: {
+            Text("These show on the camera's live overlay, in this order. Drag to reorder, swipe left to remove.")
+        }
     }
 
     private func sockLabel(_ s: VitalsDevice) -> String {
-        AppConfig.prettify(s.name) + " · " + String(s.dsn.suffix(4))
+        // The bridge often reports the sock's name as its DSN; prefer the model
+        // ("SS3-Sleep") for a friendly label, tagged with the last 4 of the DSN.
+        let base = (s.name == s.dsn || s.name.isEmpty) ? (s.model ?? "Owlet sock")
+                                                       : AppConfig.prettify(s.name)
+        return base + " · " + String(s.dsn.suffix(4))
     }
 
     // MARK: Helpers

@@ -7,6 +7,7 @@ struct LayoutCanvas: View {
     @ObservedObject var vm: MonitorViewModel
     let size: CGSize
     let onShowVitals: (CameraSettings) -> Void
+    let onShowBabyControls: (CameraSettings) -> Void
 
     @State private var layout: PaneLayout
     @State private var activeSlot: UUID?
@@ -16,10 +17,13 @@ struct LayoutCanvas: View {
     private let grid = 1.0 / 12.0
     private let minTile = 2.0 / 12.0
 
-    init(vm: MonitorViewModel, size: CGSize, onShowVitals: @escaping (CameraSettings) -> Void) {
+    init(vm: MonitorViewModel, size: CGSize,
+         onShowVitals: @escaping (CameraSettings) -> Void,
+         onShowBabyControls: @escaping (CameraSettings) -> Void) {
         self._vm = ObservedObject(wrappedValue: vm)
         self.size = size
         self.onShowVitals = onShowVitals
+        self.onShowBabyControls = onShowBabyControls
         _layout = State(initialValue: vm.activeLayout)
     }
 
@@ -55,7 +59,8 @@ struct LayoutCanvas: View {
                                vitals: vm.sockVitals(for: pane.camera),
                                onToggleFullscreen: { vm.toggleFullscreen(pane.id) },
                                onToast: { vm.showToast($0) },
-                               onShowVitals: { onShowVitals(pane.camera) })
+                               onShowVitals: { onShowVitals(pane.camera) },
+                               onBabyControls: { onShowBabyControls(pane.camera) })
                 if vm.editingLayout {
                     editChrome(slot, paneName: pane.camera.displayName)
                 }

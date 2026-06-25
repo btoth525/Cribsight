@@ -9,6 +9,7 @@ struct MonitorView: View {
     @State private var showSaveView = false
     @State private var newViewName = ""
     @State private var vitalsSheet: VitalsSheet?
+    @State private var babySheet: BabySheet?
 
     private struct VitalsSheet: Identifiable {
         let id = UUID()
@@ -16,9 +17,20 @@ struct MonitorView: View {
         let title: String
     }
 
+    private struct BabySheet: Identifiable {
+        let id = UUID()
+        let camera: String
+        let title: String
+    }
+
     private func showVitals(_ camera: CameraSettings) {
         guard let dsn = camera.owletSockDSN else { return }
         vitalsSheet = VitalsSheet(dsn: dsn, title: camera.displayName)
+    }
+
+    private func showBabyControls(_ camera: CameraSettings) {
+        guard camera.isOwletBridge else { return }
+        babySheet = BabySheet(camera: camera.streamName, title: camera.displayName)
     }
 
     private var fisheyePane: PaneViewModel? {
@@ -68,6 +80,11 @@ struct MonitorView: View {
         .sheet(item: $vitalsSheet) { sheet in
             VitalsHistoryView(service: vm.vitals, dsn: sheet.dsn, title: sheet.title)
         }
+        .sheet(item: $babySheet) { sheet in
+            if let control = vm.owletControl {
+                BabyControlsView(control: control, camera: sheet.camera, title: sheet.title)
+            }
+        }
         .alert("Save view", isPresented: $showSaveView) {
             TextField("View name", text: $newViewName)
             Button("Save") {
@@ -96,10 +113,13 @@ struct MonitorView: View {
                                vitals: vm.sockVitals(for: pane.camera),
                                onToggleFullscreen: { vm.toggleFullscreen(pane.id) },
                                onToast: { vm.showToast($0) },
-                               onShowVitals: { showVitals(pane.camera) })
+                               onShowVitals: { showVitals(pane.camera) },
+                               onBabyControls: { showBabyControls(pane.camera) })
                     .ignoresSafeArea()
             } else {
-                LayoutCanvas(vm: vm, size: geo.size, onShowVitals: { showVitals($0) })
+                LayoutCanvas(vm: vm, size: geo.size,
+                             onShowVitals: { showVitals($0) },
+                             onShowBabyControls: { showBabyControls($0) })
             }
         }
     }

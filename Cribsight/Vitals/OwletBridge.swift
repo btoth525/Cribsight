@@ -50,6 +50,32 @@ struct Vitals: Equatable {
         }
     }
 
+    /// Short form for the compact HUD ("Awake" / "Light" / "Deep").
+    var sleepShort: String? {
+        switch sleepCode {
+        case 1: return "Awake"
+        case 8: return "Light"
+        case 15: return "Deep"
+        default: return nil
+        }
+    }
+
+    /// Overlay room/camera sensors (temp, humidity, noise, brightness…) from the
+    /// bridge cam device onto these sock vitals, so one HUD can show both the baby's
+    /// vitals and the nursery's environment.
+    func merging(room: Vitals?) -> Vitals {
+        guard let room else { return self }
+        var v = self
+        v.roomTemp   = room.roomTemp ?? v.roomTemp
+        v.humidity   = room.humidity ?? v.humidity
+        v.noise      = room.noise ?? v.noise
+        v.brightness = room.brightness ?? v.brightness
+        v.motion     = room.motion ?? v.motion
+        v.sound      = room.sound ?? v.sound
+        v.wifiRSSI   = room.wifiRSSI ?? v.wifiRSSI
+        return v
+    }
+
     init() {}
 
     init(sensors d: [String: Any]) {
@@ -104,14 +130,31 @@ struct VitalsSnapshot: Equatable {
     init(json: [String: Any]) {
         let raw = (json["devices"] as? [[String: Any]]) ?? []
         devices = raw.map { d in
-            VitalsDevice(
+            let sensorDict = (d["sensors"] as? [String: Any]) ?? [:]
+            return VitalsDevice(
                 dsn: (d["dsn"] as? String) ?? (d["name"] as? String) ?? UUID().uuidString,
                 name: (d["name"] as? String) ?? "device",
-                kind: (d["kind"] as? String) ?? "device",
+                kind: VitalsSnapshot.normalizedKind(d["kind"] as? String,
+                                                    model: d["model"] as? String,
+                                                    sensors: sensorDict),
                 model: d["model"] as? String,
-                sensors: Vitals(sensors: (d["sensors"] as? [String: Any]) ?? [:])
+                sensors: Vitals(sensors: sensorDict)
             )
         }
+    }
+
+    /// The bridge labels the sock `kind:"device"` (model e.g. "SS3-Sleep"), so
+    /// normalize to "sock"/"cam"/"device" using the reported kind, model, and which
+    /// sensors are present.
+    static func normalizedKind(_ kind: String?, model: String?, sensors: [String: Any]) -> String {
+        if kind == "cam" { return "cam" }
+        if kind == "sock" { return "sock" }
+        if sensors.keys.contains("heart_rate")
+            || sensors.keys.contains("oxygen")
+            || sensors.keys.contains("sleep_state") { return "sock" }
+        let m = (model ?? "").lowercased()
+        if m.contains("sleep") || m.contains("sock") { return "sock" }
+        return kind ?? "device"
     }
 }
 

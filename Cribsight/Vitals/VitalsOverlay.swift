@@ -1,67 +1,59 @@
 import SwiftUI
 
 /// Compact glass HUD of a sock's live vitals, shown under the camera label in
-/// Baby Mode. Tapping opens the history sheet.
+/// Baby Mode. The user picks which metrics appear (and their order) per camera;
+/// tapping opens the history sheet.
 struct VitalsOverlay: View {
     let vitals: Vitals
+    /// The metrics to show, in order (from the camera's `hudFields`).
+    var fields: [VitalsField] = VitalsField.defaultFields
     var onTap: () -> Void
 
-    var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 9) {
-                stat("heart.fill", text(vitals.heartRate), unit: "bpm", color: hrColor)
-                stat("lungs.fill", text(vitals.oxygen), unit: "%", color: o2Color)
-                if let sleep = vitals.sleepLabel {
-                    stat("moon.zzz.fill", sleep, unit: "", color: Theme.accent)
-                }
-                if let b = vitals.battery {
-                    stat(batteryIcon(b), "\(b)", unit: "%", color: batteryColor(b))
-                }
-            }
-            .padding(.horizontal, 11)
-            .padding(.vertical, 7)
-            .glassPill()
+    /// Wrap onto a new row after this many metrics so the pill never runs off a tile.
+    private let perRow = 4
+
+    private var rows: [[VitalsField]] {
+        stride(from: 0, to: fields.count, by: perRow).map {
+            Array(fields[$0..<min($0 + perRow, fields.count)])
         }
-        .buttonStyle(.plain)
     }
 
-    private func stat(_ icon: String, _ value: String, unit: String, color: Color) -> some View {
+    var body: some View {
+        if fields.isEmpty {
+            EmptyView()
+        } else {
+            Button(action: onTap) {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                        HStack(spacing: 10) {
+                            ForEach(row) { stat($0) }
+                        }
+                    }
+                }
+                .padding(.horizontal, 11)
+                .padding(.vertical, 7)
+                .glassPill()
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private func stat(_ field: VitalsField) -> some View {
         HStack(spacing: 4) {
-            Image(systemName: icon)
+            Image(systemName: icon(field))
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(color)
-            Text(value)
+                .foregroundStyle(field.color(from: vitals))
+            Text(field.value(from: vitals) ?? "—")
                 .font(.callout.weight(.semibold).monospacedDigit())
                 .foregroundStyle(Theme.textPrimary)
-            if !unit.isEmpty {
-                Text(unit).font(.caption2).foregroundStyle(Theme.textTertiary)
+            if !field.unit.isEmpty {
+                Text(field.unit).font(.caption2).foregroundStyle(Theme.textTertiary)
             }
         }
     }
 
-    private func text(_ v: Int?) -> String { v.map { "\($0)" } ?? "—" }
-
-    // Display-only color cues (NOT medical alerts — the Owlet does the real ones).
-    private var hrColor: Color {
-        guard let hr = vitals.heartRate else { return Theme.textTertiary }
-        switch hr {
-        case 80...180: return Theme.live
-        case 60..<80, 181...210: return Theme.warn
-        default: return Theme.danger
-        }
-    }
-    private var o2Color: Color {
-        guard let o2 = vitals.oxygen else { return Theme.textTertiary }
-        switch o2 {
-        case 95...100: return Theme.live
-        case 90..<95: return Theme.warn
-        default: return Theme.danger
-        }
-    }
-    private func batteryColor(_ b: Int) -> Color {
-        b <= 15 ? Theme.danger : (b <= 30 ? Theme.warn : Theme.textSecondary)
-    }
-    private func batteryIcon(_ b: Int) -> String {
+    private func icon(_ field: VitalsField) -> String {
+        guard field == .battery, let b = vitals.battery else { return field.icon }
         if vitals.charging == true { return "battery.100.bolt" }
         switch b {
         case 0..<13: return "battery.0"
@@ -69,6 +61,36 @@ struct VitalsOverlay: View {
         case 38..<63: return "battery.50"
         case 63..<88: return "battery.75"
         default: return "battery.100"
+        }
+    }
+}
+
+extension VitalsField {
+    /// Display-only color cue (NOT a medical alert — the Owlet app/base do the real
+    /// alerting). Green = nominal, amber = watch, red = out of the typical range.
+    func color(from v: Vitals) -> Color {
+        switch self {
+        case .heartRate:
+            guard let hr = v.heartRate else { return Theme.textTertiary }
+            switch hr {
+            case 80...180: return Theme.live
+            case 60..<80, 181...210: return Theme.warn
+            default: return Theme.danger
+            }
+        case .oxygen, .oxygenAvg:
+            guard let o2 = (self == .oxygen ? v.oxygen : v.oxygenAvg) else { return Theme.textTertiary }
+            switch o2 {
+            case 95...100: return Theme.live
+            case 90..<95: return Theme.warn
+            default: return Theme.danger
+            }
+        case .battery:
+            guard let b = v.battery else { return Theme.textTertiary }
+            return b <= 15 ? Theme.danger : (b <= 30 ? Theme.warn : Theme.textSecondary)
+        case .sleep:
+            return v.sleepShort == nil ? Theme.textTertiary : Theme.accent
+        default:
+            return value(from: v) == nil ? Theme.textTertiary : Theme.textSecondary
         }
     }
 }

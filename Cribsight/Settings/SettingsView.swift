@@ -5,6 +5,7 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var config: AppConfig
     @StateObject private var catalog = StreamCatalog()
+    @StateObject private var owletProbe = VitalsService()
     @State private var password: String = ""
     @State private var showTour = false
     @State private var renamingID: UUID? = nil
@@ -16,6 +17,7 @@ struct SettingsView: View {
             Form {
                 connectionSection
                 camerasSection
+                owletSection
                 layoutsSection
                 alertsSection
                 displaySection
@@ -60,6 +62,9 @@ struct SettingsView: View {
             // Refresh the available-cameras list so "Add camera" is ready to pick from.
             if catalog.names.isEmpty, config.settings.connection.isComplete, !password.isEmpty {
                 catalog.discover(connection: config.settings.connection, password: password)
+            }
+            if config.settings.owlet.isComplete {
+                owletProbe.update(settings: config.settings.owlet)
             }
         }
     }
@@ -122,7 +127,8 @@ struct SettingsView: View {
         Section {
             ForEach($config.settings.cameras) { $cam in
                 NavigationLink {
-                    CameraSettingsView(config: config, cameraID: cam.id, availableStreams: catalog.names)
+                    CameraSettingsView(config: config, cameraID: cam.id,
+                                       availableStreams: catalog.names, availableSocks: owletProbe.socks)
                 } label: {
                     HStack {
                         Image(systemName: cam.isFisheye ? "circle.circle" : "video")
@@ -167,6 +173,65 @@ struct SettingsView: View {
             Text("Cameras")
         } footer: {
             Text("Adding a camera drops it straight into the grid. Swipe a camera to remove it.")
+        }
+    }
+
+    // MARK: Owlet bridge (Baby Mode)
+
+    private var owletSection: some View {
+        Section {
+            Toggle("Enable Owlet bridge", isOn: $config.settings.owlet.enabled)
+            if config.settings.owlet.enabled {
+                HStack {
+                    Text("Bridge host"); Spacer()
+                    TextField("192.168.1.50", text: $config.settings.owlet.host)
+                        .multilineTextAlignment(.trailing)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                        .keyboardType(.URL)
+                }
+                HStack {
+                    Text("Data port"); Spacer()
+                    TextField("8088", value: $config.settings.owlet.vitalsPort, format: .number.grouping(.never))
+                        .multilineTextAlignment(.trailing).keyboardType(.numberPad).frame(width: 80)
+                }
+                HStack {
+                    Text("Video port"); Spacer()
+                    TextField("1984", value: $config.settings.owlet.controlPort, format: .number.grouping(.never))
+                        .multilineTextAlignment(.trailing).keyboardType(.numberPad).frame(width: 80)
+                }
+                Button {
+                    Haptics.tap()
+                    owletProbe.update(settings: config.settings.owlet)
+                } label: {
+                    Label("Test & find devices", systemImage: "antenna.radiowaves.left.and.right")
+                }
+                if owletProbe.reachable {
+                    Label("Connected · \(owletProbe.socks.count) sock\(owletProbe.socks.count == 1 ? "" : "s"), \(owletProbe.snapshot?.cameras.count ?? 0) camera\((owletProbe.snapshot?.cameras.count ?? 0) == 1 ? "" : "s")",
+                          systemImage: "checkmark.circle.fill")
+                        .font(.caption).foregroundStyle(Theme.live)
+                }
+                ForEach(owletProbe.snapshot?.cameras ?? []) { cam in
+                    let added = config.settings.cameras.contains { $0.isOwletBridge && $0.streamName == cam.name }
+                    Button {
+                        let sock = owletProbe.socks.count == 1 ? owletProbe.socks.first?.dsn : nil
+                        config.addOwletCamera(streamName: cam.name,
+                                              displayName: AppConfig.prettify(cam.name), sockDSN: sock)
+                        Haptics.tap()
+                    } label: {
+                        HStack {
+                            Label(AppConfig.prettify(cam.name), systemImage: "video.badge.waveform")
+                            Spacer()
+                            if added { Image(systemName: "checkmark").foregroundStyle(Theme.accent) }
+                            else { Text("Add").foregroundStyle(Theme.accent) }
+                        }
+                    }
+                    .disabled(added)
+                }
+            }
+        } header: {
+            Text("Owlet Bridge · Baby Mode")
+        } footer: {
+            Text("Streams the Owlet camera directly (sub-second) and overlays live sock vitals. Pair a sock to any camera in its settings.")
         }
     }
 

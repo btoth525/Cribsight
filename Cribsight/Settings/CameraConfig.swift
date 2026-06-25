@@ -94,6 +94,14 @@ struct CameraSettings: Codable, Equatable, Identifiable {
     var crySensitivity: Double
     var dewarp: DewarpParams
     var presets: [ViewPreset]
+    /// When true, this camera streams directly from the Owlet bridge (go2rtc) and
+    /// `streamName` is the bridge camera name — not a Frigate stream.
+    var isOwletBridge: Bool = false
+    /// Paired Owlet sock (by dsn) whose vitals show on this camera.
+    var owletSockDSN: String? = nil
+
+    /// Baby Mode = has live sock vitals / bridge talk + lullaby.
+    var babyMode: Bool { isOwletBridge || owletSockDSN != nil }
 
     static func owlet() -> CameraSettings {
         CameraSettings(
@@ -127,6 +135,23 @@ struct CameraSettings: Codable, Equatable, Identifiable {
         CameraSettings(displayName: "Camera", streamName: "", isFisheye: false,
                        startMuted: false, crySensitivity: 0.6,
                        dewarp: DewarpParams(), presets: [])
+    }
+}
+
+// Tolerant decoding so adding the Owlet fields never resets saved cameras.
+extension CameraSettings {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        displayName = try c.decodeIfPresent(String.self, forKey: .displayName) ?? "Camera"
+        streamName = try c.decodeIfPresent(String.self, forKey: .streamName) ?? ""
+        isFisheye = try c.decodeIfPresent(Bool.self, forKey: .isFisheye) ?? false
+        startMuted = try c.decodeIfPresent(Bool.self, forKey: .startMuted) ?? false
+        crySensitivity = try c.decodeIfPresent(Double.self, forKey: .crySensitivity) ?? 0.6
+        dewarp = try c.decodeIfPresent(DewarpParams.self, forKey: .dewarp) ?? DewarpParams()
+        presets = try c.decodeIfPresent([ViewPreset].self, forKey: .presets) ?? []
+        isOwletBridge = try c.decodeIfPresent(Bool.self, forKey: .isOwletBridge) ?? false
+        owletSockDSN = try c.decodeIfPresent(String.self, forKey: .owletSockDSN)
     }
 }
 

@@ -6,6 +6,7 @@ import SwiftUI
 struct LayoutCanvas: View {
     @ObservedObject var vm: MonitorViewModel
     let size: CGSize
+    let onShowVitals: (CameraSettings) -> Void
 
     @State private var layout: PaneLayout
     @State private var activeSlot: UUID?
@@ -15,9 +16,10 @@ struct LayoutCanvas: View {
     private let grid = 1.0 / 12.0
     private let minTile = 2.0 / 12.0
 
-    init(vm: MonitorViewModel, size: CGSize) {
+    init(vm: MonitorViewModel, size: CGSize, onShowVitals: @escaping (CameraSettings) -> Void) {
         self._vm = ObservedObject(wrappedValue: vm)
         self.size = size
+        self.onShowVitals = onShowVitals
         _layout = State(initialValue: vm.activeLayout)
     }
 
@@ -50,8 +52,10 @@ struct LayoutCanvas: View {
                                isFullscreen: false,
                                controlsVisible: !vm.editingLayout && !vm.locked && vm.controlsVisible,
                                interactive: !vm.editingLayout && !vm.locked,
+                               vitals: vm.sockVitals(for: pane.camera),
                                onToggleFullscreen: { vm.toggleFullscreen(pane.id) },
-                               onToast: { vm.showToast($0) })
+                               onToast: { vm.showToast($0) },
+                               onShowVitals: { onShowVitals(pane.camera) })
                 if vm.editingLayout {
                     editChrome(slot, paneName: pane.camera.displayName)
                 }

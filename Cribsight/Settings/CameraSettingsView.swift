@@ -6,6 +6,7 @@ struct CameraSettingsView: View {
     @ObservedObject var config: AppConfig
     let cameraID: UUID
     var availableStreams: [String]
+    var availableSocks: [VitalsDevice] = []
 
     private var index: Int? { config.settings.cameras.firstIndex { $0.id == cameraID } }
 
@@ -15,6 +16,9 @@ struct CameraSettingsView: View {
                 detailSection(idx)
                 if config.settings.cameras[idx].isFisheye {
                     fisheyeSection(idx)
+                }
+                if !availableSocks.isEmpty || config.settings.cameras[idx].owletSockDSN != nil {
+                    babyVitalsSection(idx)
                 }
             } else {
                 Text("This camera was removed.").foregroundStyle(Theme.textSecondary)
@@ -67,6 +71,26 @@ struct CameraSettingsView: View {
         } footer: {
             Text("Dial Center/Radius so the circular image fills the view, and Lens FOV to match your lens (≈180–200°). Pinch to zoom, drag to look around. If pan or tilt feels backwards, flip it here.")
         }
+    }
+
+    private func babyVitalsSection(_ idx: Int) -> some View {
+        let cam = camBinding(idx)
+        return Section {
+            Picker("Owlet sock", selection: cam.owletSockDSN) {
+                Text("None").tag(String?.none)
+                ForEach(availableSocks) { sock in
+                    Text(sockLabel(sock)).tag(Optional(sock.dsn))
+                }
+            }
+        } header: {
+            Text("Baby vitals")
+        } footer: {
+            Text("Pair an Owlet sock to overlay live heart rate, oxygen and sleep on this camera. Tap the overlay for history.")
+        }
+    }
+
+    private func sockLabel(_ s: VitalsDevice) -> String {
+        AppConfig.prettify(s.name) + " · " + String(s.dsn.suffix(4))
     }
 
     // MARK: Helpers

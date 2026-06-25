@@ -8,6 +8,18 @@ struct MonitorView: View {
     @State private var showSettings = false
     @State private var showSaveView = false
     @State private var newViewName = ""
+    @State private var vitalsSheet: VitalsSheet?
+
+    private struct VitalsSheet: Identifiable {
+        let id = UUID()
+        let dsn: String
+        let title: String
+    }
+
+    private func showVitals(_ camera: CameraSettings) {
+        guard let dsn = camera.owletSockDSN else { return }
+        vitalsSheet = VitalsSheet(dsn: dsn, title: camera.displayName)
+    }
 
     private var fisheyePane: PaneViewModel? {
         vm.panes.first(where: { $0.camera.isFisheye })
@@ -53,6 +65,9 @@ struct MonitorView: View {
         .sheet(isPresented: $showSettings, onDismiss: { vm.applySettingsChange() }) {
             SettingsView(config: vm.config)
         }
+        .sheet(item: $vitalsSheet) { sheet in
+            VitalsHistoryView(service: vm.vitals, dsn: sheet.dsn, title: sheet.title)
+        }
         .alert("Save view", isPresented: $showSaveView) {
             TextField("View name", text: $newViewName)
             Button("Save") {
@@ -78,11 +93,13 @@ struct MonitorView: View {
                                isFullscreen: true,
                                controlsVisible: vm.controlsVisible && !vm.locked,
                                interactive: !vm.locked,
+                               vitals: vm.sockVitals(for: pane.camera),
                                onToggleFullscreen: { vm.toggleFullscreen(pane.id) },
-                               onToast: { vm.showToast($0) })
+                               onToast: { vm.showToast($0) },
+                               onShowVitals: { showVitals(pane.camera) })
                     .ignoresSafeArea()
             } else {
-                LayoutCanvas(vm: vm, size: geo.size)
+                LayoutCanvas(vm: vm, size: geo.size, onShowVitals: { showVitals($0) })
             }
         }
     }

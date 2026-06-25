@@ -10,8 +10,11 @@ struct CameraPaneView: View {
     /// When false (e.g. while arranging the layout), the pane's own PTZ gestures
     /// and quick controls are suppressed so drag-to-move/resize wins.
     var interactive: Bool = true
+    /// Live sock vitals for this camera (Baby Mode); nil hides the HUD.
+    var vitals: Vitals? = nil
     var onToggleFullscreen: () -> Void
     var onToast: (String) -> Void
+    var onShowVitals: (() -> Void)? = nil
 
     @State private var lastDrag: CGSize = .zero
     @State private var lastZoom: CGFloat = 1
@@ -63,7 +66,13 @@ struct CameraPaneView: View {
             // controls up here means they never collide with the global control bar
             // that floats over the bottom-center on a side-by-side layout.
             HStack(alignment: .top) {
-                labelBadge
+                VStack(alignment: .leading, spacing: 8) {
+                    labelBadge
+                    if let vitals {
+                        VitalsOverlay(vitals: vitals) { onShowVitals?() }
+                            .transition(.opacity)
+                    }
+                }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 8) {
                     statusBadge

@@ -25,6 +25,10 @@ final class MonitorViewModel: ObservableObject {
     private var loginInFlight = false
     private lazy var tokenProvider: () -> String? = { [weak self] in self?.frigateClient?.token }
 
+    /// Live Owlet sock + room vitals from the bridge (Baby Mode).
+    let vitals = VitalsService()
+    private var vitalsCancellable: AnyCancellable?
+
     private var nightTimer: Timer?
     private var controlsHideWork: DispatchWorkItem?
     private var toastWork: DispatchWorkItem?
@@ -34,7 +38,18 @@ final class MonitorViewModel: ObservableObject {
         self.activeLayout = config.activeLayout
         rebuildPanes()
         evaluateNightMode()
+        // Re-publish vitals updates so the overlay refreshes.
+        vitalsCancellable = vitals.objectWillChange.sink { [weak self] _ in
+            self?.objectWillChange.send()
+        }
     }
+
+    /// The sock vitals to show on a given camera (nil if not paired / no data).
+    func sockVitals(for camera: CameraSettings) -> Vitals? {
+        vitals.device(dsn: camera.owletSockDSN)?.sensors
+    }
+
+    private func isOwlet(_ id: UUID) -> Bool { config.camera(for: id)?.isOwletBridge == true }
 
     func pane(forSlot slotID: UUID) -> PaneViewModel? {
         panes.first { $0.id == slotID }
@@ -48,6 +63,7 @@ final class MonitorViewModel: ObservableObject {
         AudioController.shared.activate()
         UIApplication.shared.isIdleTimerDisabled = config.settings.keepAwake
         connectThenStartSources()
+        vitals.update(settings: config.settings.owlet)
         startNightTimer()
         evaluateNightMode()
         scheduleControlsHide()
@@ -55,6 +71,7 @@ final class MonitorViewModel: ObservableObject {
 
     func stop() {
         sources.values.forEach { $0.stop() }
+        vitals.stop(clear: true)
         nightTimer?.invalidate(); nightTimer = nil
         UIApplication.shared.isIdleTimerDisabled = false
         AudioController.shared.deactivate()
@@ -62,6 +79,7 @@ final class MonitorViewModel: ObservableObject {
 
     func pauseForBackground() {
         sources.values.forEach { $0.stop() }
+        vitals.stop()
         nightTimer?.invalidate(); nightTimer = nil
         // Symmetric with resume: don't leak the keep-awake or audio session.
         UIApplication.shared.isIdleTimerDisabled = false
@@ -73,6 +91,7 @@ final class MonitorViewModel: ObservableObject {
         AudioController.shared.activate()
         UIApplication.shared.isIdleTimerDisabled = config.settings.keepAwake
         connectThenStartSources()
+        vitals.update(settings: config.settings.owlet)
         startNightTimer()
         evaluateNightMode()
     }
@@ -81,13 +100,18 @@ final class MonitorViewModel: ObservableObject {
     /// WebSocket signaling reads the token via `frigateClient`). Direct mode
     /// starts immediately. `CameraSource.start()` is guarded against double-start.
     private func connectThenStartSources() {
+        // Owlet bridge cameras stream directly over go2rtc — no login needed.
+        startSources(owlet: true)
+
+        // Frigate cameras need a JWT first.
+        let needsFrigate = sources.keys.contains { !isOwlet($0) }
+        guard needsFrigate else { return }
         guard config.settings.connection.mode == .frigate else {
-            sources.values.forEach { $0.start() }
+            startSources(owlet: false)
             return
         }
         // Avoid a duplicate login on cold launch, where both RootView.onAppear and
-        // scenePhase==.active fire before the first login returns. On resume from
-        // background we deliberately re-login for a fresh token.
+        // scenePhase==.active fire before the first login returns.
         guard !loginInFlight else { return }
         loginInFlight = true
         let conn = config.settings.connection
@@ -99,7 +123,7 @@ final class MonitorViewModel: ObservableObject {
                 self.loginInFlight = false
                 switch result {
                 case .success:
-                    self.sources.values.forEach { $0.start() }
+                    self.startSources(owlet: false)
                 case .failure(let error):
                     self.showToast("Frigate login failed · \(error.localizedDescription)")
                 }
@@ -107,11 +131,22 @@ final class MonitorViewModel: ObservableObject {
         }
     }
 
+    /// Start the running-eligible sources of one kind (Owlet bridge vs Frigate).
+    private func startSources(owlet: Bool) {
+        for (id, source) in sources where isOwlet(id) == owlet {
+            if !source.isRunning { source.start() }
+        }
+    }
+
     private func startIdleSources() {
-        if config.settings.connection.mode == .frigate && frigateClient?.token == nil {
+        startSources(owlet: true)
+        let needsFrigateLogin = config.settings.connection.mode == .frigate
+            && frigateClient?.token == nil
+            && sources.keys.contains { !isOwlet($0) && !(sources[$0]?.isRunning ?? true) }
+        if needsFrigateLogin {
             connectThenStartSources()
         } else {
-            sources.values.forEach { if !$0.isRunning { $0.start() } }
+            startSources(owlet: false)
         }
     }
 
@@ -120,7 +155,6 @@ final class MonitorViewModel: ObservableObject {
     /// Create/refresh/remove `CameraSource`s so exactly the cameras used by the
     /// active layout have a live connection.
     private func ensureSources() {
-        let conn = config.settings.connection
         let neededIDs = Set(config.activeLayout.slots.map { $0.cameraID })
 
         for (id, source) in sources where !neededIDs.contains(id) {
@@ -129,6 +163,8 @@ final class MonitorViewModel: ObservableObject {
         }
         for id in neededIDs {
             guard let cam = config.camera(for: id) else { continue }
+            // Each camera streams from its own connection: Frigate or the Owlet bridge.
+            let conn = config.connection(for: cam)
             if let existing = sources[id] {
                 existing.updateConfig(camera: cam, connection: conn,
                                       cryAlertsEnabled: config.settings.cryAlertsEnabled,
@@ -168,6 +204,7 @@ final class MonitorViewModel: ObservableObject {
     func applySettingsChange() {
         rebuildPanes()
         connectThenStartSources()
+        vitals.update(settings: config.settings.owlet)
         UIApplication.shared.isIdleTimerDisabled = config.settings.keepAwake
         evaluateNightMode()
     }

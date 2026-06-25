@@ -49,6 +49,7 @@ struct AppSettings: Codable, Equatable {
     var keepAwake: Bool = true
     var hasCompletedOnboarding: Bool = false
     var hasSeenTour: Bool = false
+    var owlet: OwletBridgeSettings = OwletBridgeSettings()
 
     static let `default` = AppSettings()
 }
@@ -70,6 +71,7 @@ extension AppSettings {
         if let v = try c.decodeIfPresent(Bool.self, forKey: .keepAwake) { keepAwake = v }
         if let v = try c.decodeIfPresent(Bool.self, forKey: .hasCompletedOnboarding) { hasCompletedOnboarding = v }
         if let v = try c.decodeIfPresent(Bool.self, forKey: .hasSeenTour) { hasSeenTour = v }
+        if let v = try c.decodeIfPresent(OwletBridgeSettings.self, forKey: .owlet) { owlet = v }
     }
 }
 
@@ -111,6 +113,23 @@ final class AppConfig: ObservableObject {
     // MARK: Derived
 
     var connection: ConnectionSettings { settings.connection }
+
+    var owlet: OwletBridgeSettings { settings.owlet }
+
+    /// The Owlet bridge as a direct go2rtc connection (for the bridge camera video).
+    var owletConnection: ConnectionSettings {
+        var c = ConnectionSettings()
+        c.mode = .go2rtc
+        c.host = settings.owlet.hostTrimmed
+        c.go2rtcPort = settings.owlet.controlPort
+        c.useTLS = false
+        return c
+    }
+
+    /// Which connection a camera streams from (the Owlet bridge or Frigate).
+    func connection(for camera: CameraSettings) -> ConnectionSettings {
+        camera.isOwletBridge ? owletConnection : settings.connection
+    }
 
     var isConfigured: Bool {
         settings.connection.isComplete && !settings.cameras.isEmpty
@@ -206,6 +225,19 @@ final class AppConfig: ObservableObject {
 
     func addCamera(_ camera: CameraSettings) {
         settings.cameras.append(camera)
+    }
+
+    /// Add a camera that streams directly from the Owlet bridge (not Frigate),
+    /// optionally paired to a sock for the vitals overlay. Grows the grid.
+    func addOwletCamera(streamName: String, displayName: String, sockDSN: String?) {
+        guard !settings.cameras.contains(where: { $0.isOwletBridge && $0.streamName == streamName }) else { return }
+        var cam = CameraSettings.blank()
+        cam.streamName = streamName
+        cam.displayName = displayName
+        cam.isOwletBridge = true
+        cam.owletSockDSN = sockDSN
+        settings.cameras.append(cam)
+        reflowActiveLayout()
     }
 
     /// Add a camera for a discovered stream and grow the grid to include it.

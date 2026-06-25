@@ -4,11 +4,15 @@ import Combine
 /// Connection to the Owlet → RTSP bridge's sensor API (separate from Frigate).
 /// The bridge serves live sock + room vitals at `GET http://host:port/api/vitals`.
 struct OwletBridgeSettings: Codable, Equatable {
-    var enabled: Bool = false
-    var host: String = ""
+    // Pre-set for this nursery's bridge so it works out of the box; all editable
+    // in Settings → Owlet bridge.
+    var enabled: Bool = true
+    var host: String = "192.168.1.204"
+    /// REST API port (/api/vitals, /api/talk, /api/sounds…). Direct, not remapped.
     var vitalsPort: Int = 8088
-    /// go2rtc control/WebRTC port (used by Phase-2 direct video).
-    var controlPort: Int = 1984
+    /// go2rtc control/WHEP port for direct video. The bridge's Docker maps host
+    /// 1985 → container 1984, so the reachable port is 1985.
+    var controlPort: Int = 1985
 
     var hostTrimmed: String { host.trimmingCharacters(in: .whitespaces) }
     var isComplete: Bool { enabled && !hostTrimmed.isEmpty }

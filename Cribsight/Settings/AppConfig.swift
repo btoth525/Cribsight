@@ -96,6 +96,21 @@ final class AppConfig: ObservableObject {
         } else {
             self.settings = .default
         }
+        applyOwletBridgeDefaults()
+    }
+
+    /// One-time correction so the pre-set bridge values reach existing installs too
+    /// (UserDefaults survives an Xcode reinstall, so older saved blobs would keep the
+    /// empty host / old port). Only touches an unconfigured or old-port bridge.
+    private func applyOwletBridgeDefaults() {
+        if settings.owlet.hostTrimmed.isEmpty {
+            settings.owlet.enabled = true
+            settings.owlet.host = "192.168.1.204"
+            settings.owlet.vitalsPort = 8088
+            settings.owlet.controlPort = 1985
+        } else if settings.owlet.host == "192.168.1.204" && settings.owlet.controlPort == 1984 {
+            settings.owlet.controlPort = 1985
+        }
     }
 
     private func persist() {

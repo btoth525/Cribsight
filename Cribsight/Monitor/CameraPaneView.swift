@@ -10,8 +10,9 @@ struct CameraPaneView: View {
     /// When false (e.g. while arranging the layout), the pane's own PTZ gestures
     /// and quick controls are suppressed so drag-to-move/resize wins.
     var interactive: Bool = true
-    /// Live sock vitals for this camera (Baby Mode); nil hides the HUD.
-    var vitals: Vitals? = nil
+    /// Live vitals source for the Baby Mode HUD (the overlay observes it directly so
+    /// polling refreshes only the pill, not the video). Nil hides the HUD.
+    var vitalsService: VitalsService? = nil
     var onToggleFullscreen: () -> Void
     var onToast: (String) -> Void
     var onShowVitals: (() -> Void)? = nil
@@ -70,8 +71,8 @@ struct CameraPaneView: View {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 8) {
                     labelBadge
-                    if let vitals {
-                        VitalsOverlay(vitals: vitals, fields: pane.camera.hudFields) { onShowVitals?() }
+                    if pane.camera.babyMode, let vitalsService {
+                        VitalsOverlay(service: vitalsService, camera: pane.camera) { onShowVitals?() }
                             .transition(.opacity)
                     }
                 }

@@ -1,32 +1,32 @@
 import SwiftUI
 
 /// Compact glass HUD of a sock's live vitals, shown under the camera label in
-/// Baby Mode. The user picks which metrics appear (and their order) per camera;
-/// tapping opens the history sheet.
+/// Baby Mode. Observes the vitals service directly so polling refreshes only this
+/// pill — not the video panes. The user picks which metrics appear (and their
+/// order) per camera; tapping opens the history sheet.
 struct VitalsOverlay: View {
-    let vitals: Vitals
-    /// The metrics to show, in order (from the camera's `hudFields`).
-    var fields: [VitalsField] = VitalsField.defaultFields
+    @ObservedObject var service: VitalsService
+    let camera: CameraSettings
     var onTap: () -> Void
 
     /// Wrap onto a new row after this many metrics so the pill never runs off a tile.
     private let perRow = 4
 
-    private var rows: [[VitalsField]] {
+    private var fields: [VitalsField] { camera.hudFields }
+
+    private func rows(_ fields: [VitalsField]) -> [[VitalsField]] {
         stride(from: 0, to: fields.count, by: perRow).map {
             Array(fields[$0..<min($0 + perRow, fields.count)])
         }
     }
 
     var body: some View {
-        if fields.isEmpty {
-            EmptyView()
-        } else {
-            Button(action: onTap) {
+        if let vitals = service.vitals(for: camera), !fields.isEmpty {
+            Button { onTap() } label: {
                 VStack(alignment: .leading, spacing: 6) {
-                    ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                    ForEach(Array(rows(fields).enumerated()), id: \.offset) { _, row in
                         HStack(spacing: 10) {
-                            ForEach(row) { stat($0) }
+                            ForEach(row) { stat($0, vitals) }
                         }
                     }
                 }
@@ -38,9 +38,9 @@ struct VitalsOverlay: View {
         }
     }
 
-    private func stat(_ field: VitalsField) -> some View {
+    private func stat(_ field: VitalsField, _ vitals: Vitals) -> some View {
         HStack(spacing: 4) {
-            Image(systemName: icon(field))
+            Image(systemName: icon(field, vitals))
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(field.color(from: vitals))
             Text(field.value(from: vitals) ?? "—")
@@ -52,7 +52,7 @@ struct VitalsOverlay: View {
         }
     }
 
-    private func icon(_ field: VitalsField) -> String {
+    private func icon(_ field: VitalsField, _ vitals: Vitals) -> String {
         guard field == .battery, let b = vitals.battery else { return field.icon }
         if vitals.charging == true { return "battery.100.bolt" }
         switch b {

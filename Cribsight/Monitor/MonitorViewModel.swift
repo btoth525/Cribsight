@@ -25,9 +25,10 @@ final class MonitorViewModel: ObservableObject {
     private var loginInFlight = false
     private lazy var tokenProvider: () -> String? = { [weak self] in self?.frigateClient?.token }
 
-    /// Live Owlet sock + room vitals from the bridge (Baby Mode).
+    /// Live Owlet sock + room vitals from the bridge (Baby Mode). The HUD overlay
+    /// observes this directly, so polling refreshes only the pill — it does NOT
+    /// re-render the video panes.
     let vitals = VitalsService()
-    private var vitalsCancellable: AnyCancellable?
 
     private var nightTimer: Timer?
     private var controlsHideWork: DispatchWorkItem?
@@ -38,20 +39,6 @@ final class MonitorViewModel: ObservableObject {
         self.activeLayout = config.activeLayout
         rebuildPanes()
         evaluateNightMode()
-        // Re-publish vitals updates so the overlay refreshes.
-        vitalsCancellable = vitals.objectWillChange.sink { [weak self] _ in
-            self?.objectWillChange.send()
-        }
-    }
-
-    /// The vitals to show on a given camera: the paired sock's HR/O2/sleep merged
-    /// with the matching bridge cam's room sensors (temp/humidity/noise). Nil when
-    /// there's neither a paired sock nor a matching bridge camera.
-    func sockVitals(for camera: CameraSettings) -> Vitals? {
-        let sock = vitals.device(dsn: camera.owletSockDSN)?.sensors
-        let room = vitals.snapshot?.cameras.first { $0.name == camera.streamName }?.sensors
-        guard sock != nil || room != nil else { return nil }
-        return (sock ?? Vitals()).merging(room: room)
     }
 
     /// Talk + lullaby actions against the Owlet bridge (nil if the bridge isn't set up).

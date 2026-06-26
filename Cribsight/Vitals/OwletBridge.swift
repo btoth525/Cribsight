@@ -218,6 +218,16 @@ final class VitalsService: ObservableObject {
 
     func device(dsn: String?) -> VitalsDevice? { snapshot?.device(dsn: dsn) }
 
+    /// Merged vitals to display on a camera: the paired sock's HR/O2/sleep merged
+    /// with the matching bridge cam's room sensors (temp/humidity/noise). Nil when
+    /// there's neither a paired sock nor a matching bridge camera.
+    func vitals(for camera: CameraSettings) -> Vitals? {
+        let sock = device(dsn: camera.owletSockDSN)?.sensors
+        let room = snapshot?.cameras.first { $0.name == camera.streamName }?.sensors
+        guard sock != nil || room != nil else { return nil }
+        return (sock ?? Vitals()).merging(room: room)
+    }
+
     /// Apply current bridge settings and start/stop polling to match.
     func update(settings: OwletBridgeSettings) {
         self.settings = settings

@@ -56,7 +56,7 @@ struct LayoutCanvas: View {
                                isFullscreen: false,
                                controlsVisible: !vm.editingLayout && !vm.locked && vm.controlsVisible,
                                interactive: !vm.editingLayout && !vm.locked,
-                               vitals: vm.sockVitals(for: pane.camera),
+                               vitalsService: vm.vitals,
                                onToggleFullscreen: { vm.toggleFullscreen(pane.id) },
                                onToast: { vm.showToast($0) },
                                onShowVitals: { onShowVitals(pane.camera) },

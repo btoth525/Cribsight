@@ -110,7 +110,7 @@ struct MonitorView: View {
                                isFullscreen: true,
                                controlsVisible: vm.controlsVisible && !vm.locked,
                                interactive: !vm.locked,
-                               vitals: vm.sockVitals(for: pane.camera),
+                               vitalsService: vm.vitals,
                                onToggleFullscreen: { vm.toggleFullscreen(pane.id) },
                                onToast: { vm.showToast($0) },
                                onShowVitals: { showVitals(pane.camera) },

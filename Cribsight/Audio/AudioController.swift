@@ -13,6 +13,15 @@ final class AudioController {
     private init() {}
 
     func activate() {
+        reactivate(attempt: 0)
+        installObservers()
+    }
+
+    /// (Re)assert the listen-in session. Retries with backoff because the previous
+    /// audio owner (a phone call, Siri, an alarm, another app) may not have fully
+    /// released the session yet — without this, an overnight interruption could
+    /// leave the monitor silent until someone touches the phone.
+    private func reactivate(attempt: Int) {
         let session = AVAudioSession.sharedInstance()
         do {
             // Mix with other audio so a white-noise / sound-machine app keeps
@@ -20,9 +29,12 @@ final class AudioController {
             try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
             try session.setActive(true)
         } catch {
-            // Non-fatal; video still works without audio.
+            guard attempt < 4 else { return }
+            let delay = 0.25 * pow(2.0, Double(attempt))   // 0.25, 0.5, 1, 2s
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.reactivate(attempt: attempt + 1)
+            }
         }
-        installObservers()
     }
 
     func deactivate() {
@@ -48,13 +60,16 @@ final class AudioController {
         guard let info = note.userInfo,
               let raw = info[AVAudioSessionInterruptionTypeKey] as? UInt,
               let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
+        // On .ended iOS may hint .shouldResume, but for a baby monitor we always
+        // try to bring listen-in back (with retries) regardless of the hint.
         if type == .ended {
-            try? AVAudioSession.sharedInstance().setActive(true)
+            reactivate(attempt: 0)
         }
     }
 
     @objc private func handleRouteChange(_ note: Notification) {
-        // Re-assert the session after the route changes (headphones, etc.).
-        try? AVAudioSession.sharedInstance().setActive(true)
+        // Re-assert the session after the route changes (headphones unplugged,
+        // Bluetooth dropped, etc.), retrying if the new route isn't ready yet.
+        reactivate(attempt: 0)
     }
 }

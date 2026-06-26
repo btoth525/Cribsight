@@ -110,8 +110,15 @@ final class MonitorViewModel: ObservableObject {
         guard !loginInFlight else { return }
         loginInFlight = true
         let conn = config.settings.connection
-        let client = FrigateClient(apiBase: conn.apiBase)
-        frigateClient = client
+        // Reuse the existing client (and its URLSession) when the address is
+        // unchanged, so repeated foreground/settings cycles don't churn sessions.
+        let client: FrigateClient
+        if let existing = frigateClient, existing.apiBase == conn.apiBase {
+            client = existing
+        } else {
+            client = FrigateClient(apiBase: conn.apiBase)
+            frigateClient = client
+        }
         client.login(username: conn.username, password: config.frigatePassword ?? "") { [weak self] result in
             DispatchQueue.main.async {
                 guard let self = self else { return }

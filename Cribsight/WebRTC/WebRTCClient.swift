@@ -77,16 +77,23 @@ final class WebRTCClient: NSObject {
                 "OfferToReceiveVideo": "true"
             ],
             optionalConstraints: nil)
+        // WebRTC fires these completions on its own signaling thread; hop to main
+        // so all peerConnection/state/timer access stays single-threaded.
         pc.offer(for: offerConstraints) { [weak self] sdp, error in
             guard let self = self else { return }
-            if let error = error { self.fail("Offer failed: \(error.localizedDescription)"); return }
-            guard let sdp = sdp else { self.fail("No offer produced."); return }
-            pc.setLocalDescription(sdp) { [weak self] error in
-                guard let self = self else { return }
-                if let error = error {
-                    self.fail("setLocalDescription failed: \(error.localizedDescription)"); return
+            DispatchQueue.main.async {
+                if let error = error { self.fail("Offer failed: \(error.localizedDescription)"); return }
+                guard let sdp = sdp, self.peerConnection === pc else { return }
+                pc.setLocalDescription(sdp) { [weak self] error in
+                    guard let self = self else { return }
+                    DispatchQueue.main.async {
+                        if let error = error {
+                            self.fail("setLocalDescription failed: \(error.localizedDescription)"); return
+                        }
+                        guard self.peerConnection === pc else { return }
+                        self.startGatheringFallback()
+                    }
                 }
-                self.startGatheringFallback()
             }
         }
     }
@@ -126,7 +133,11 @@ final class WebRTCClient: NSObject {
     }
 
     private func fail(_ message: String) {
-        state = .failed(message)
+        if Thread.isMainThread {
+            state = .failed(message)
+        } else {
+            DispatchQueue.main.async { self.state = .failed(message) }
+        }
     }
 
     private func startGatheringFallback() {
@@ -153,22 +164,28 @@ final class WebRTCClient: NSObject {
         signaling.exchange(offer: local.sdp,
                            streamName: streamName,
                            onRemoteCandidate: { [weak self] candidate in
-            self?.peerConnection?.add(candidate) { _ in }
+            DispatchQueue.main.async { self?.peerConnection?.add(candidate) { _ in } }
         }) { [weak self] result in
             guard let self = self else { return }
-            switch result {
-            case .failure(let error):
-                self.fail(error.localizedDescription)
-            case .success(let answerSDP):
-                guard self.peerConnection != nil else { return }   // torn down meanwhile
-                let answer = RTCSessionDescription(type: .answer, sdp: answerSDP)
-                pc.setRemoteDescription(answer) { [weak self] error in
-                    guard let self = self else { return }
-                    if let error = error {
-                        self.fail("setRemoteDescription failed: \(error.localizedDescription)")
-                        return
+            // Signaling completions arrive on a URLSession/WS thread — hop to main.
+            DispatchQueue.main.async {
+                switch result {
+                case .failure(let error):
+                    self.fail(error.localizedDescription)
+                case .success(let answerSDP):
+                    guard let pc = self.peerConnection else { return }   // torn down meanwhile
+                    let answer = RTCSessionDescription(type: .answer, sdp: answerSDP)
+                    pc.setRemoteDescription(answer) { [weak self] error in
+                        guard let self = self else { return }
+                        DispatchQueue.main.async {
+                            if let error = error {
+                                self.fail("setRemoteDescription failed: \(error.localizedDescription)")
+                                return
+                            }
+                            guard self.peerConnection === pc else { return }
+                            self.captureRemoteTracks()
+                        }
                     }
-                    self.captureRemoteTracks()
                 }
             }
         }
@@ -215,7 +232,8 @@ extension WebRTCClient: RTCPeerConnectionDelegate {
     func peerConnectionShouldNegotiate(_ peerConnection: RTCPeerConnection) {}
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {
-        handleICE(newState)
+        // Delegate runs on WebRTC's signaling thread; mutate state on main only.
+        DispatchQueue.main.async { [weak self] in self?.handleICE(newState) }
     }
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceGatheringState) {

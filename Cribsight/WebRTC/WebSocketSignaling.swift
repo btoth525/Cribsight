@@ -111,7 +111,7 @@ final class WebSocketSignaling: NSObject, Signaling {
         case "webrtc/candidate":
             if let cand = obj["value"] as? String, !cand.isEmpty {
                 let candidate = RTCIceCandidate(sdp: cand, sdpMLineIndex: 0, sdpMid: nil)
-                onRemoteCandidate?(candidate)
+                DispatchQueue.main.async { [weak self] in self?.onRemoteCandidate?(candidate) }
             }
         case "error":
             resolve(.failure(SignalingError.network((obj["value"] as? String) ?? "go2rtc error")))
@@ -122,15 +122,16 @@ final class WebSocketSignaling: NSObject, Signaling {
 
     /// Resolves the offer/answer exchange exactly once. The socket stays open
     /// after a successful answer so late trickle candidates still arrive; it's
-    /// closed by `cancel()` when the client tears down.
+    /// closed by `cancel()` when the client tears down. Runs on main so the
+    /// receive thread and the timeout timer can't both fire it (double completion).
     private func resolve(_ result: Result<String, Error>) {
-        guard !answered else { return }
-        answered = true
         DispatchQueue.main.async { [weak self] in
-            self?.timeoutTimer?.invalidate(); self?.timeoutTimer = nil
+            guard let self = self, !self.answered else { return }
+            self.answered = true
+            self.timeoutTimer?.invalidate(); self.timeoutTimer = nil
+            let done = self.completion
+            self.completion = nil
+            done?(result)
         }
-        let done = completion
-        completion = nil
-        done?(result)
     }
 }

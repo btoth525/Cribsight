@@ -109,20 +109,16 @@ struct CameraSettingsView: View {
                     .foregroundStyle(Theme.textPrimary)
             }
             .onMove { offsets, dest in
-                var arr = config.settings.cameras[idx].hudFields
-                arr.move(fromOffsets: offsets, toOffset: dest)
-                config.settings.cameras[idx].hudFields = arr
+                mutateHud { $0.move(fromOffsets: offsets, toOffset: dest) }
             }
             .onDelete { offsets in
-                var arr = config.settings.cameras[idx].hudFields
-                arr.remove(atOffsets: offsets)
-                config.settings.cameras[idx].hudFields = arr
+                mutateHud { $0.remove(atOffsets: offsets) }
             }
             if !remaining.isEmpty {
                 Menu {
                     ForEach(remaining) { field in
                         Button {
-                            config.settings.cameras[idx].hudFields.append(field)
+                            mutateHud { $0.append(field) }
                         } label: {
                             Label(field.label, systemImage: field.icon)
                         }
@@ -151,6 +147,13 @@ struct CameraSettingsView: View {
     }
 
     // MARK: Helpers
+
+    /// Mutate this camera's HUD fields by looking the camera up by id at call time,
+    /// so a stale captured index can never subscript out of bounds.
+    private func mutateHud(_ body: (inout [VitalsField]) -> Void) {
+        guard let i = config.settings.cameras.firstIndex(where: { $0.id == cameraID }) else { return }
+        body(&config.settings.cameras[i].hudFields)
+    }
 
     private func camBinding(_ idx: Int) -> Binding<CameraSettings> {
         Binding(get: { config.settings.cameras[idx] },

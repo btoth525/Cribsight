@@ -6,7 +6,18 @@ import Foundation
 final class FrigateClient {
     /// e.g. `https://192.168.1.50:8971`
     let apiBase: String
-    private(set) var token: String?
+
+    /// Set on the login URLSession thread, read off-main by the signaling layer on
+    /// every (re)connect — so guard it with a lock.
+    private let tokenLock = NSLock()
+    private var _token: String?
+    var token: String? {
+        tokenLock.lock(); defer { tokenLock.unlock() }
+        return _token
+    }
+    private func setToken(_ value: String?) {
+        tokenLock.lock(); _token = value; tokenLock.unlock()
+    }
 
     private let session: URLSession
 
@@ -44,7 +55,7 @@ final class FrigateClient {
                                                             : SignalingError.http(http.statusCode)))
                 return
             }
-            self.token = self.extractToken(from: http, url: url)
+            self.setToken(self.extractToken(from: http, url: url))
             completion(.success(()))
         }.resume()
     }

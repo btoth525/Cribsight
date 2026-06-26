@@ -52,8 +52,14 @@ final class StatsMonitor {
 
     private func poll() {
         client?.statistics { [weak self] report in
-            guard let self = self else { return }
-            var stats = self.last   // carry forward; only overwrite fields present this tick
+            // The stats callback fires on a WebRTC thread; do all `last`/byte-counter
+            // work on main so it can't race `stop()` (which resets them on main).
+            DispatchQueue.main.async { self?.process(report) }
+        }
+    }
+
+    private func process(_ report: RTCStatisticsReport) {
+        var stats = self.last   // carry forward; only overwrite fields present this tick
 
             for (_, s) in report.statistics where s.type == "inbound-rtp" {
                 let kind = (s.values["kind"] as? String) ?? (s.values["mediaType"] as? String)
@@ -81,10 +87,7 @@ final class StatsMonitor {
                 }
             }
 
-            self.last = stats
-            DispatchQueue.main.async {
-                self.onUpdate?(stats)
-            }
-        }
+        self.last = stats
+        self.onUpdate?(stats)
     }
 }

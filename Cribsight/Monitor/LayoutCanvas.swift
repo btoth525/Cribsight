@@ -33,25 +33,22 @@ struct LayoutCanvas: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
+            // In edit mode only, a tap on the empty canvas adds a camera. This
+            // layer sits BEHIND the panes, so a tap on a pane hits the pane, not
+            // this. Critically, when NOT editing it's absent entirely — otherwise
+            // it would swallow taps meant for the parent's show/hide-controls
+            // handler, leaving the control bar stuck hidden.
+            if vm.editingLayout && !vm.config.cameras.isEmpty {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture(coordinateSpace: .local) { point in
+                        addTapPoint = point
+                        showCameraMenu = true
+                    }
+            }
             ForEach(current.slots) { slot in
                 slotView(slot)
             }
-        }
-        // Tap on empty canvas area to add a camera (edit mode only).
-        // Placed before .padding so coordinates match the .position() space.
-        .onTapGesture(coordinateSpace: .local) { point in
-            guard vm.editingLayout, !vm.config.cameras.isEmpty else { return }
-            // Suppress if the tap landed on any existing pane.
-            let onPane = current.slots.contains { slot in
-                let r = CGRect(x: slot.x * size.width - gap,
-                               y: slot.y * size.height - gap,
-                               width: slot.width * size.width + gap * 2,
-                               height: slot.height * size.height + gap * 2)
-                return r.contains(point)
-            }
-            guard !onPane else { return }
-            addTapPoint = point
-            showCameraMenu = true
         }
         .padding(gap / 2)
         .onChange(of: vm.activeLayout) { _, newValue in

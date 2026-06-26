@@ -12,6 +12,8 @@ struct LayoutCanvas: View {
     @State private var layout: PaneLayout
     @State private var activeSlot: UUID?
     @State private var startFrame: CGRect?
+    @State private var showCameraMenu = false
+    @State private var addTapPoint: CGPoint = .zero
 
     private let gap: CGFloat = 8
     private let grid = 1.0 / 12.0
@@ -35,12 +37,36 @@ struct LayoutCanvas: View {
                 slotView(slot)
             }
         }
+        // Tap on empty canvas area to add a camera (edit mode only).
+        // Placed before .padding so coordinates match the .position() space.
+        .onTapGesture(coordinateSpace: .local) { point in
+            guard vm.editingLayout, !vm.config.cameras.isEmpty else { return }
+            // Suppress if the tap landed on any existing pane.
+            let onPane = current.slots.contains { slot in
+                let r = CGRect(x: slot.x * size.width - gap,
+                               y: slot.y * size.height - gap,
+                               width: slot.width * size.width + gap * 2,
+                               height: slot.height * size.height + gap * 2)
+                return r.contains(point)
+            }
+            guard !onPane else { return }
+            addTapPoint = point
+            showCameraMenu = true
+        }
         .padding(gap / 2)
         .onChange(of: vm.activeLayout) { _, newValue in
             if activeSlot == nil { layout = newValue }
         }
         .onChange(of: vm.editingLayout) { _, editing in
             if editing { layout = vm.activeLayout }
+        }
+        .confirmationDialog("Add camera", isPresented: $showCameraMenu, titleVisibility: .visible) {
+            ForEach(vm.config.cameras) { cam in
+                Button(cam.displayName) {
+                    addCameraAt(cam.id, point: addTapPoint)
+                }
+            }
+            Button("Cancel", role: .cancel) {}
         }
     }
 
@@ -128,7 +154,10 @@ struct LayoutCanvas: View {
                 var f = start
                 f.origin.x = start.origin.x + value.translation.width / max(1, size.width)
                 f.origin.y = start.origin.y + value.translation.height / max(1, size.height)
-                mutate(slot.id) { $0.frame = f }
+                // Disable animations during live drag to prevent position-interpolation shake.
+                withTransaction(Transaction(animation: .none)) {
+                    mutate(slot.id) { $0.frame = f }
+                }
             }
             .onEnded { _ in finishEdit() }
     }
@@ -141,7 +170,9 @@ struct LayoutCanvas: View {
                 var f = start
                 f.size.width = start.size.width + value.translation.width / max(1, size.width)
                 f.size.height = start.size.height + value.translation.height / max(1, size.height)
-                mutate(slot.id) { $0.frame = f }
+                withTransaction(Transaction(animation: .none)) {
+                    mutate(slot.id) { $0.frame = f }
+                }
             }
             .onEnded { _ in finishEdit() }
     }
@@ -155,7 +186,8 @@ struct LayoutCanvas: View {
     }
 
     private func finishEdit() {
-        snapToGrid()
+        // Snap without animations so the grid-lock jump is instant, not a spring.
+        withTransaction(Transaction(animation: .none)) { snapToGrid() }
         activeSlot = nil
         startFrame = nil
         vm.commitLayout(layout)
@@ -178,5 +210,16 @@ struct LayoutCanvas: View {
         layout.slots.removeAll { $0.id == id }
         vm.commitLayout(layout)
         Haptics.rigid()
+    }
+
+    /// Add a camera pane at the tapped canvas location.
+    private func addCameraAt(_ id: UUID, point: CGPoint) {
+        let normalX = max(0, point.x / max(1, size.width) - 0.2)
+        let normalY = max(0, point.y / max(1, size.height) - 0.2)
+        var slot = LayoutSlot(cameraID: id, x: normalX, y: normalY, width: 0.4, height: 0.4)
+        slot.normalize(minSize: minTile)
+        layout.slots.append(slot)
+        vm.commitLayout(layout)
+        Haptics.tap()
     }
 }

@@ -63,7 +63,6 @@ struct LayoutEditorBar: View {
                 Text("No cameras yet")
             } else {
                 ForEach(vm.config.cameras) { cam in
-                    // A fisheye can be added more than once for a second aim.
                     Button {
                         addCamera(cam.id)
                     } label: {
@@ -82,25 +81,34 @@ struct LayoutEditorBar: View {
 
     // MARK: Actions
 
-    private func placedCameraIDs() -> [UUID] {
+    /// All configured cameras, with currently-placed cameras first (preserving
+    /// their existing order), followed by any not yet in the active layout.
+    private func allCameraIDsInOrder() -> [UUID] {
+        let placed = vm.activeLayout.slots.map { $0.cameraID }
         var seen = Set<UUID>()
-        var ids = vm.activeLayout.slots.map { $0.cameraID }.filter { seen.insert($0).inserted }
-        if ids.isEmpty { ids = vm.config.cameras.map { $0.id } }
+        var ids = placed.filter { seen.insert($0).inserted }
+        for cam in vm.config.cameras where !seen.contains(cam.id) {
+            ids.append(cam.id)
+        }
         return ids
     }
 
     private func apply(_ preset: Preset) {
-        let ids = placedCameraIDs()
+        let all = allCameraIDsInOrder()
+        guard !all.isEmpty else { return }
+        let first = all[0]
+        // For two-pane layouts, always produce exactly 2 panes even if only one
+        // camera is configured (use the same camera twice as a starting point).
+        let pair: [UUID] = all.count >= 2 ? Array(all.prefix(2)) : [first, first]
         var layout: PaneLayout
         switch preset {
-        case .single:    layout = .columns(cameraIDs: Array(ids.prefix(1)))
-        case .columns:   layout = .columns(cameraIDs: ids)
-        case .rows:      layout = .rows(cameraIDs: ids)
-        case .spotlight: layout = .spotlight(cameraIDs: ids)
-        case .grid:      layout = .auto(cameraIDs: ids)
-        case .pip:       layout = .pip(cameraIDs: ids)
+        case .single:    layout = .columns(cameraIDs: [first])
+        case .columns:   layout = .columns(cameraIDs: pair)
+        case .rows:      layout = .rows(cameraIDs: pair)
+        case .spotlight: layout = .spotlight(cameraIDs: all)
+        case .grid:      layout = .auto(cameraIDs: all)
+        case .pip:       layout = .pip(cameraIDs: pair)
         }
-        // Overwrite the active layout in place.
         layout.id = vm.activeLayout.id
         layout.name = vm.activeLayout.name
         vm.commitLayout(layout)
@@ -114,19 +122,30 @@ struct LayoutEditorBar: View {
         Haptics.tap()
     }
 
-    /// One tap: turn a single ceiling fisheye into two side-by-side panes, each a
-    /// virtual PTZ aimed at a different crib.
+    /// Adds one more fisheye pane each tap, distributing all fisheye slots evenly
+    /// across the horizontal axis with distinct virtual-PTZ aims. Non-fisheye
+    /// slots are left in place.
     private func splitFisheye() {
         guard let fish = vm.config.cameras.first(where: { $0.isFisheye }) else { return }
-        let cribA = ViewOrientation(pan: -0.7, tilt: 1.0, zoom: 1.8)
-        let cribB = ViewOrientation(pan: 0.7, tilt: 1.0, zoom: 1.8)
         var layout = vm.activeLayout
-        layout.slots = [
-            LayoutSlot(cameraID: fish.id, x: 0, y: 0, width: 0.5, height: 1,
-                       view: SlotView(mode: .perspective, orientation: cribA)),
-            LayoutSlot(cameraID: fish.id, x: 0.5, y: 0, width: 0.5, height: 1,
-                       view: SlotView(mode: .perspective, orientation: cribB))
-        ]
+        let existing = layout.slots.filter { $0.cameraID == fish.id }.count
+        let newCount = max(existing, 1) + 1
+        let nonFish = layout.slots.filter { $0.cameraID != fish.id }
+        let cw = 1.0 / Double(newCount)
+        var fishSlots: [LayoutSlot] = []
+        for i in 0..<newCount {
+            // Spread virtual-PTZ aims evenly from -0.9 (left) to +0.9 (right).
+            let panFrac = Double(i) / Double(max(newCount - 1, 1))
+            let pan = -0.9 + panFrac * 1.8
+            let orientation = ViewOrientation(pan: pan, tilt: 1.0, zoom: 1.8)
+            fishSlots.append(LayoutSlot(
+                cameraID: fish.id,
+                x: Double(i) * cw, y: 0,
+                width: cw, height: 1,
+                view: SlotView(mode: .perspective, orientation: orientation)
+            ))
+        }
+        layout.slots = nonFish + fishSlots
         vm.commitLayout(layout)
         Haptics.selection()
     }

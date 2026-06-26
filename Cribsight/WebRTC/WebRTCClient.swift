@@ -134,7 +134,7 @@ final class WebRTCClient: NSObject {
             self.gatheringFallbackTimer?.invalidate()
             // Host candidates gather almost instantly on a LAN; if "complete"
             // never fires, ship what we have after a short grace period.
-            self.gatheringFallbackTimer = Timer.scheduledTimer(withTimeInterval: 1.5,
+            self.gatheringFallbackTimer = Timer.scheduledTimer(withTimeInterval: 1.0,
                                                                repeats: false) { [weak self] _ in
                 self?.sendOffer(force: true)
             }

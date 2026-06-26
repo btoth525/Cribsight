@@ -12,6 +12,9 @@ final class ReconnectController {
 
     var watchdogTimeout: TimeInterval = 8
     var maxBackoff: TimeInterval = 10
+    /// Grace before a hard reconnect after a transient ICE drop — WebRTC often
+    /// recovers a `.disconnected` pair on its own, so don't tear down instantly.
+    var recoveryGrace: TimeInterval = 3
 
     private(set) var isActive = false
     private var attempt = 0
@@ -60,8 +63,12 @@ final class ReconnectController {
         case .live:
             attempt = 0
             retryTimer?.invalidate(); retryTimer = nil
-        case .failed, .reconnecting:
-            scheduleReconnect()
+        case .failed:
+            scheduleReconnect(initialDelay: backoffDelay())
+        case .reconnecting:
+            // Transient ICE drop: give it a moment to self-heal. If it recovers to
+            // .live the retry timer is cancelled before it ever fires.
+            scheduleReconnect(initialDelay: max(recoveryGrace, backoffDelay()))
         case .idle, .connecting:
             break
         }
@@ -69,10 +76,9 @@ final class ReconnectController {
 
     // MARK: - Private
 
-    private func scheduleReconnect() {
+    private func scheduleReconnect(initialDelay: TimeInterval) {
         guard isActive, retryTimer == nil else { return }
-        let delay = backoffDelay()
-        let timer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+        let timer = Timer.scheduledTimer(withTimeInterval: initialDelay, repeats: false) { [weak self] _ in
             guard let self = self else { return }
             self.retryTimer = nil
             guard self.isActive else { return }
@@ -101,7 +107,7 @@ final class ReconnectController {
                 self.attempt = self.stallCount
                 self.client?.disconnect()
                 self.lastState = .reconnecting
-                self.scheduleReconnect()
+                self.scheduleReconnect(initialDelay: self.backoffDelay())
             } else {
                 // Frames are flowing again — genuinely healthy, reset the stall count.
                 self.stallCount = 0

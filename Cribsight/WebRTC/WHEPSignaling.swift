@@ -2,9 +2,9 @@ import Foundation
 import WebRTC
 
 /// Performs the WHEP SDP exchange against go2rtc: POST our offer, get the answer.
-/// Tries the standard `/api/whep` endpoint first, then go2rtc's `/api/webrtc`
-/// alias as a fallback. go2rtc returns a complete answer (candidates included),
-/// so there's no trickle ICE here.
+/// Hits go2rtc's native `/api/webrtc` first (the only one current go2rtc serves),
+/// then the standard `/api/whep` path as a fallback for other servers. go2rtc
+/// returns a complete answer (candidates included), so there's no trickle ICE here.
 final class WHEPSignaling: Signaling {
     /// e.g. `http://192.168.1.50:1984`
     let apiBase: String
@@ -18,13 +18,13 @@ final class WHEPSignaling: Signaling {
                   streamName: String,
                   onRemoteCandidate: @escaping (RTCIceCandidate) -> Void,
                   completion: @escaping (Result<String, Error>) -> Void) {
-        post(path: "/api/whep", offer: offer, src: streamName) { [weak self] result in
+        post(path: "/api/webrtc", offer: offer, src: streamName) { [weak self] result in
             switch result {
             case .success:
                 completion(result)
             case .failure:
-                // Fall back to go2rtc's WebRTC alias endpoint.
-                self?.post(path: "/api/webrtc", offer: offer, src: streamName, completion: completion)
+                // Fall back to the standard WHEP path for non-go2rtc servers.
+                self?.post(path: "/api/whep", offer: offer, src: streamName, completion: completion)
             }
         }
     }

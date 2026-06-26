@@ -135,7 +135,7 @@ struct LayoutEditorBar: View {
         var fishSlots: [LayoutSlot] = []
         for i in 0..<newCount {
             // Spread virtual-PTZ aims evenly from -0.9 (left) to +0.9 (right).
-            let panFrac = Double(i) / Double(max(newCount - 1, 1))
+            let panFrac = Float(i) / Float(max(newCount - 1, 1))
             let pan = -0.9 + panFrac * 1.8
             let orientation = ViewOrientation(pan: pan, tilt: 1.0, zoom: 1.8)
             fishSlots.append(LayoutSlot(

@@ -154,7 +154,7 @@ final class TalkRecorder: NSObject, ObservableObject {
     func start() {
         let session = AVAudioSession.sharedInstance()
         try? session.setCategory(.playAndRecord, mode: .voiceChat,
-                                 options: [.defaultToSpeaker, .allowBluetooth, .mixWithOthers])
+                                 options: [.defaultToSpeaker, .allowBluetoothHFP, .mixWithOthers])
         try? session.setActive(true)
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("talk-\(UUID().uuidString).m4a")

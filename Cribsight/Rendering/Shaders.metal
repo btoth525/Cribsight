@@ -88,18 +88,6 @@ static float2 fisheyeUV(float theta, float phi, constant DewarpUniforms& u) {
     return uv;
 }
 
-static float3 rotateRay(float3 v, float pan, float tilt, float roll) {
-    // Rz(roll)
-    float cr = cos(roll), sr = sin(roll);
-    float3 a = float3(cr * v.x - sr * v.y, sr * v.x + cr * v.y, v.z);
-    // Rx(tilt)
-    float ct = cos(tilt), st = sin(tilt);
-    float3 b = float3(a.x, ct * a.y - st * a.z, st * a.y + ct * a.z);
-    // Ry(pan)
-    float cp = cos(pan), sp = sin(pan);
-    return float3(cp * b.x + sp * b.z, b.y, -sp * b.x + cp * b.z);
-}
-
 fragment float4 fsDewarp(VSOut in [[stage_in]],
                          texture2d<float> yTex   [[texture(0)]],
                          texture2d<float> cbcrTex [[texture(1)]],

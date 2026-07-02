@@ -6,10 +6,12 @@ struct GlassIconButton: View {
     var active: Bool = false
     var tint: Color = Theme.accent
     var size: CGFloat = 46
+    /// VoiceOver name for this icon-only button.
+    var label: String? = nil
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        let button = Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: size * 0.36, weight: .semibold))
                 .foregroundStyle(active ? Color.black : Theme.textPrimary)
@@ -21,6 +23,12 @@ struct GlassIconButton: View {
         .buttonStyle(.plain)
         .glassPill()
         .contentShape(Circle())
+
+        if let label {
+            button.accessibilityLabel(label)
+        } else {
+            button
+        }
     }
 }
 

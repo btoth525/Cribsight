@@ -213,6 +213,12 @@ final class VitalsService: ObservableObject {
     private var timer: Timer?
     private let maxSamples = 600   // ~30 min @ 3s
 
+    deinit {
+        // Settings uses a throwaway instance as a connection probe; without this
+        // its 3s polling timer would outlive it in the main run loop forever.
+        timer?.invalidate()
+    }
+
     /// Discovered sock devices (for the per-camera pairing picker in Settings).
     var socks: [VitalsDevice] { snapshot?.socks ?? [] }
 

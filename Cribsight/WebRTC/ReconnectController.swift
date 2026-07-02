@@ -29,6 +29,11 @@ final class ReconnectController {
         self.client = client
     }
 
+    deinit {
+        retryTimer?.invalidate()
+        watchdogTimer?.invalidate()
+    }
+
     /// Begin maintaining the connection.
     func start() {
         guard !isActive else { return }

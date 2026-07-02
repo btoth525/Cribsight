@@ -17,6 +17,10 @@ final class WebSocketSignaling: NSObject, Signaling {
     private var onRemoteCandidate: ((RTCIceCandidate) -> Void)?
     private var answered = false
     private var timeoutTimer: Timer?
+    /// Bumped on every exchange/cancel (main thread only). Late callbacks from a
+    /// cancelled socket carry the old generation, so they can never resolve — or
+    /// fail — the exchange that replaced them.
+    private var generation = 0
 
     init(wsBase: String, tokenProvider: @escaping () -> String?) {
         self.wsBase = wsBase
@@ -28,6 +32,9 @@ final class WebSocketSignaling: NSObject, Signaling {
                   onRemoteCandidate: @escaping (RTCIceCandidate) -> Void,
                   completion: @escaping (Result<String, Error>) -> Void) {
         // Reset one-shot state so the same instance works across reconnects.
+        // (Called from the client's main-thread signaling flow.)
+        generation += 1
+        let gen = generation
         answered = false
         task?.cancel(with: .goingAway, reason: nil)
         task = nil
@@ -35,10 +42,10 @@ final class WebSocketSignaling: NSObject, Signaling {
         self.onRemoteCandidate = onRemoteCandidate
 
         guard var comps = URLComponents(string: wsBase + "/live/webrtc/api/ws") else {
-            resolve(.failure(SignalingError.badURL)); return
+            resolve(gen, .failure(SignalingError.badURL)); return
         }
         comps.queryItems = [URLQueryItem(name: "src", value: streamName)]
-        guard let url = comps.url else { resolve(.failure(SignalingError.badURL)); return }
+        guard let url = comps.url else { resolve(gen, .failure(SignalingError.badURL)); return }
 
         var request = URLRequest(url: url)
         request.timeoutInterval = 12
@@ -50,17 +57,19 @@ final class WebSocketSignaling: NSObject, Signaling {
         let task = URLSession.shared.webSocketTask(with: request)
         self.task = task
         task.resume()
-        receiveLoop()
-        send(["type": "webrtc/offer", "value": offer])
+        receiveLoop(gen)
+        send(["type": "webrtc/offer", "value": offer], gen)
 
         DispatchQueue.main.async { [weak self] in
-            self?.timeoutTimer = Timer.scheduledTimer(withTimeInterval: 12, repeats: false) { _ in
-                self?.resolve(.failure(SignalingError.empty))
+            guard let self, gen == self.generation else { return }
+            self.timeoutTimer = Timer.scheduledTimer(withTimeInterval: 12, repeats: false) { [weak self] _ in
+                self?.resolve(gen, .failure(SignalingError.empty))
             }
         }
     }
 
     func cancel() {
+        generation += 1
         DispatchQueue.main.async { [weak self] in
             self?.timeoutTimer?.invalidate(); self?.timeoutTimer = nil
         }
@@ -70,30 +79,30 @@ final class WebSocketSignaling: NSObject, Signaling {
 
     // MARK: - Internals
 
-    private func send(_ obj: [String: Any]) {
+    private func send(_ obj: [String: Any], _ gen: Int) {
         guard let data = try? JSONSerialization.data(withJSONObject: obj),
               let str = String(data: data, encoding: .utf8) else { return }
         task?.send(.string(str)) { [weak self] error in
             if let error = error {
-                self?.resolve(.failure(SignalingError.network(error.localizedDescription)))
+                self?.resolve(gen, .failure(SignalingError.network(error.localizedDescription)))
             }
         }
     }
 
-    private func receiveLoop() {
+    private func receiveLoop(_ gen: Int) {
         task?.receive { [weak self] result in
             guard let self = self else { return }
             switch result {
             case .failure(let error):
-                self.resolve(.failure(SignalingError.network(error.localizedDescription)))
+                self.resolve(gen, .failure(SignalingError.network(error.localizedDescription)))
             case .success(let message):
-                self.handle(message)
-                self.receiveLoop()
+                self.handle(message, gen)
+                self.receiveLoop(gen)
             }
         }
     }
 
-    private func handle(_ message: URLSessionWebSocketTask.Message) {
+    private func handle(_ message: URLSessionWebSocketTask.Message, _ gen: Int) {
         let text: String?
         switch message {
         case .string(let s): text = s
@@ -107,14 +116,17 @@ final class WebSocketSignaling: NSObject, Signaling {
 
         switch type {
         case "webrtc/answer":
-            if let sdp = obj["value"] as? String { resolve(.success(sdp)) }
+            if let sdp = obj["value"] as? String { resolve(gen, .success(sdp)) }
         case "webrtc/candidate":
             if let cand = obj["value"] as? String, !cand.isEmpty {
                 let candidate = RTCIceCandidate(sdp: cand, sdpMLineIndex: 0, sdpMid: nil)
-                DispatchQueue.main.async { [weak self] in self?.onRemoteCandidate?(candidate) }
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, gen == self.generation else { return }
+                    self.onRemoteCandidate?(candidate)
+                }
             }
         case "error":
-            resolve(.failure(SignalingError.network((obj["value"] as? String) ?? "go2rtc error")))
+            resolve(gen, .failure(SignalingError.network((obj["value"] as? String) ?? "go2rtc error")))
         default:
             break
         }
@@ -123,10 +135,11 @@ final class WebSocketSignaling: NSObject, Signaling {
     /// Resolves the offer/answer exchange exactly once. The socket stays open
     /// after a successful answer so late trickle candidates still arrive; it's
     /// closed by `cancel()` when the client tears down. Runs on main so the
-    /// receive thread and the timeout timer can't both fire it (double completion).
-    private func resolve(_ result: Result<String, Error>) {
+    /// receive thread and the timeout timer can't both fire it (double
+    /// completion), and drops callbacks from a superseded exchange.
+    private func resolve(_ gen: Int, _ result: Result<String, Error>) {
         DispatchQueue.main.async { [weak self] in
-            guard let self = self, !self.answered else { return }
+            guard let self = self, gen == self.generation, !self.answered else { return }
             self.answered = true
             self.timeoutTimer?.invalidate(); self.timeoutTimer = nil
             let done = self.completion

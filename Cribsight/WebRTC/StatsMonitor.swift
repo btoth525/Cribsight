@@ -33,6 +33,10 @@ final class StatsMonitor {
         self.client = client
     }
 
+    deinit {
+        timer?.invalidate()
+    }
+
     func start(interval: TimeInterval = 0.2) {
         stop()
         let t = Timer(timeInterval: interval, repeats: true) { [weak self] _ in

@@ -46,6 +46,12 @@ struct AppSettings: Codable, Equatable {
     var nightMode: NightModeSettings = NightModeSettings()
     var cryAlertsEnabled: Bool = true
     var cryChimeEnabled: Bool = false
+    /// Toasts + haptics when the charger disconnects or the battery runs low.
+    var batteryAlertsEnabled: Bool = true
+    /// UI-feedback haptics (taps, drags). Alert vibrations always play.
+    var hapticsEnabled: Bool = true
+    /// Seconds before the control bar auto-hides; 0 = never hide.
+    var controlsHideSeconds: Double = 4
     var keepAwake: Bool = true
     var hasCompletedOnboarding: Bool = false
     var hasSeenTour: Bool = false
@@ -68,6 +74,9 @@ extension AppSettings {
         if let v = try c.decodeIfPresent(NightModeSettings.self, forKey: .nightMode) { nightMode = v }
         if let v = try c.decodeIfPresent(Bool.self, forKey: .cryAlertsEnabled) { cryAlertsEnabled = v }
         if let v = try c.decodeIfPresent(Bool.self, forKey: .cryChimeEnabled) { cryChimeEnabled = v }
+        if let v = try c.decodeIfPresent(Bool.self, forKey: .batteryAlertsEnabled) { batteryAlertsEnabled = v }
+        if let v = try c.decodeIfPresent(Bool.self, forKey: .hapticsEnabled) { hapticsEnabled = v }
+        if let v = try c.decodeIfPresent(Double.self, forKey: .controlsHideSeconds) { controlsHideSeconds = v }
         if let v = try c.decodeIfPresent(Bool.self, forKey: .keepAwake) { keepAwake = v }
         if let v = try c.decodeIfPresent(Bool.self, forKey: .hasCompletedOnboarding) { hasCompletedOnboarding = v }
         if let v = try c.decodeIfPresent(Bool.self, forKey: .hasSeenTour) { hasSeenTour = v }

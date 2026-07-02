@@ -15,6 +15,15 @@ final class MonitorViewModel: ObservableObject {
     @Published var nightActive = false
     @Published var editingLayout = false
     @Published var toast: String?
+    /// Recent cry/sound alerts (newest first), so a parent can check what
+    /// happened overnight. Session-scoped, capped.
+    @Published private(set) var soundEvents: [SoundEvent] = []
+
+    struct SoundEvent: Identifiable, Equatable {
+        let id = UUID()
+        let date: Date
+        let cameraName: String
+    }
 
     let config: AppConfig
 
@@ -33,6 +42,11 @@ final class MonitorViewModel: ObservableObject {
     private var nightTimer: Timer?
     private var controlsHideWork: DispatchWorkItem?
     private var toastWork: DispatchWorkItem?
+
+    // Charger guard for a wall-mounted / always-on monitor.
+    private var batteryObservers: [NSObjectProtocol] = []
+    private var lastBatteryState: UIDevice.BatteryState = .unknown
+    private var lowBatteryWarnedAt: Int = 100   // lowest % already warned about
 
     init(config: AppConfig) {
         self.config = config
@@ -62,6 +76,7 @@ final class MonitorViewModel: ObservableObject {
         startNightTimer()
         evaluateNightMode()
         scheduleControlsHide()
+        startBatteryMonitoring()
     }
 
     func stop() {
@@ -175,7 +190,10 @@ final class MonitorViewModel: ObservableObject {
                 let source = CameraSource(camera: cam, connection: conn, tokenProvider: tokenProvider,
                                           cryAlertsEnabled: config.settings.cryAlertsEnabled,
                                           cryChimeEnabled: config.settings.cryChimeEnabled)
-                source.onCry = { [weak self] name in self?.showToast("Sound detected · \(name)") }
+                source.onCry = { [weak self] name in
+                    self?.recordSoundEvent(camera: name)
+                    self?.showToast("Sound detected · \(name)")
+                }
                 sources[id] = source
             }
         }
@@ -190,7 +208,10 @@ final class MonitorViewModel: ObservableObject {
             guard let source = sources[slot.cameraID] else { return nil }
             // Reuse the pane for this slot if its camera is unchanged, so the
             // Metal view and current aim survive add/remove of other panes.
+            // Refresh its uniforms so edited settings (fisheye calibration,
+            // flips) take effect immediately, not on the next gesture.
             if let pane = existing[slot.id], pane.source.id == slot.cameraID {
+                pane.refreshCameraParams()
                 return pane
             }
             let pane = PaneViewModel(slotID: slot.id, source: source, initialView: slot.view)
@@ -323,6 +344,67 @@ final class MonitorViewModel: ObservableObject {
 
     var nightDim: Double { config.settings.nightMode.dim }
     var nightWarmth: Double { config.settings.nightMode.warmth }
+
+    // MARK: Sound events
+
+    private func recordSoundEvent(camera: String) {
+        soundEvents.insert(SoundEvent(date: Date(), cameraName: camera), at: 0)
+        if soundEvents.count > 50 {
+            soundEvents.removeLast(soundEvents.count - 50)
+        }
+    }
+
+    func clearSoundEvents() {
+        soundEvents = []
+        Haptics.tap()
+    }
+
+    // MARK: Battery / charger guard
+
+    /// An always-on nursery monitor dying quietly on battery is the worst failure
+    /// mode, so surface charger disconnects and low battery as toasts + haptics.
+    private func startBatteryMonitoring() {
+        UIDevice.current.isBatteryMonitoringEnabled = true
+        lastBatteryState = UIDevice.current.batteryState
+        guard batteryObservers.isEmpty else { return }
+        let center = NotificationCenter.default
+        for name in [UIDevice.batteryStateDidChangeNotification,
+                     UIDevice.batteryLevelDidChangeNotification] {
+            batteryObservers.append(center.addObserver(forName: name, object: nil,
+                                                       queue: .main) { [weak self] _ in
+                self?.batteryChanged()
+            })
+        }
+    }
+
+    private func batteryChanged() {
+        let device = UIDevice.current
+        let state = device.batteryState
+        defer { lastBatteryState = state }
+        guard device.batteryLevel >= 0 else { return }   // unknown (e.g. simulator)
+        let level = Int((device.batteryLevel * 100).rounded())
+
+        switch state {
+        case .unplugged:
+            // Only announce the unplug itself when we were previously on power —
+            // a handheld phone that's simply not charging shouldn't nag on launch.
+            if lastBatteryState == .charging || lastBatteryState == .full {
+                showToast("Charger disconnected · running on battery")
+                Haptics.alert()
+            } else if level <= 10, lowBatteryWarnedAt > 10 {
+                showToast("Battery low · \(level)% — plug in the charger")
+                Haptics.alert()
+                lowBatteryWarnedAt = 10
+            } else if level <= 20, lowBatteryWarnedAt > 20 {
+                showToast("Battery at \(level)% · consider plugging in")
+                lowBatteryWarnedAt = 20
+            }
+        case .charging, .full:
+            lowBatteryWarnedAt = 100
+        default:
+            break
+        }
+    }
 
     // MARK: Toast
 

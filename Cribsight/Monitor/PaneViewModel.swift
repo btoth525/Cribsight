@@ -35,7 +35,10 @@ final class PaneViewModel: ObservableObject, Identifiable {
         self.source = source
         self.renderer = DewarpRenderer(sink: source.sink)
         let cam = source.camera
-        self.orientation = initialView?.orientation ?? cam.dewarp.defaultOrientation
+        // Non-fisheye panes use identity (1×, centered) — their pan/tilt/zoom are
+        // digital-PTZ view offsets, not a fisheye aim.
+        self.orientation = initialView?.orientation
+            ?? (cam.isFisheye ? cam.dewarp.defaultOrientation : .identity)
         self.mode = initialView?.mode ?? cam.dewarp.mode
         updateUniforms()
         // Re-publish source changes (connection/stats/mute/cry) as our own.
@@ -50,22 +53,43 @@ final class PaneViewModel: ObservableObject, Identifiable {
 
     // MARK: Gestures / framing
 
+    /// `dx`/`dy` are raw drag deltas normalized to the pane size (fractions).
     func applyDrag(dx: Float, dy: Float) {
-        guard camera.isFisheye else { return }
-        // Drag left/right pans level around the room (azimuth), up/down tilts
-        // between straight-down and the walls. Per-camera invert flags flip either
-        // axis for odd mounts. tilt is an elevation angle (0…~89° off nadir).
-        let panDir: Float = camera.dewarp.invertPan ? 1 : -1
-        let tiltDir: Float = camera.dewarp.invertTilt ? -1 : 1
-        orientation.pan += panDir * dx
-        orientation.tilt = min(max(orientation.tilt + tiltDir * dy, 0.02), 1.56)
+        if camera.isFisheye {
+            // Drag left/right pans level around the room (azimuth), up/down tilts
+            // between straight-down and the walls. Per-camera invert flags flip either
+            // axis for odd mounts. tilt is an elevation angle (0…~89° off nadir).
+            let panDir: Float = camera.dewarp.invertPan ? 1 : -1
+            let tiltDir: Float = camera.dewarp.invertTilt ? -1 : 1
+            orientation.pan += panDir * dx * 2.6
+            orientation.tilt = min(max(orientation.tilt + tiltDir * dy * 2.0, 0.02), 1.56)
+        } else {
+            // Digital pan while zoomed in: the content follows the finger, so the
+            // view window moves opposite the drag, scaled by the zoom.
+            let z = max(orientation.zoom, 1)
+            guard z > 1.001 else { return }
+            orientation.pan -= dx / z
+            orientation.tilt -= dy / z
+            clampDigitalOffsets()
+        }
         updateUniforms()
     }
 
     func applyZoom(_ scale: Float) {
-        guard camera.isFisheye else { return }
-        orientation.zoom = min(max(orientation.zoom * scale, 0.4), 4.0)
+        if camera.isFisheye {
+            orientation.zoom = min(max(orientation.zoom * scale, 0.4), 4.0)
+        } else {
+            orientation.zoom = min(max(orientation.zoom * scale, 1.0), 5.0)
+            clampDigitalOffsets()
+        }
         updateUniforms()
+    }
+
+    /// Keep the digital-PTZ window inside the frame (offsets shrink as zoom does).
+    private func clampDigitalOffsets() {
+        let limit = (1 - 1 / max(orientation.zoom, 1)) / 2
+        orientation.pan = min(max(orientation.pan, -limit), limit)
+        orientation.tilt = min(max(orientation.tilt, -limit), limit)
     }
 
     func apply(preset: ViewPreset) {
@@ -77,7 +101,7 @@ final class PaneViewModel: ObservableObject, Identifiable {
     }
 
     func resetView() {
-        orientation = camera.dewarp.defaultOrientation
+        orientation = camera.isFisheye ? camera.dewarp.defaultOrientation : .identity
         mode = camera.dewarp.mode
         updateUniforms()
         persistAim()
@@ -86,7 +110,6 @@ final class PaneViewModel: ObservableObject, Identifiable {
 
     /// Called when a PTZ gesture ends, to save the new framing for this slot.
     func endInteraction() {
-        guard camera.isFisheye else { return }
         persistAim()
     }
 
@@ -94,10 +117,15 @@ final class PaneViewModel: ObservableObject, Identifiable {
         renderer.snapshot(size: size)
     }
 
+    /// Re-push uniforms after the camera's settings changed (fisheye calibration,
+    /// flips, FOV). Keeps the user's current aim; only the lens params refresh.
+    func refreshCameraParams() {
+        updateUniforms()
+    }
+
     // MARK: Internal
 
     private func persistAim() {
-        guard camera.isFisheye else { return }
         onAimChanged?(id, SlotView(mode: mode, orientation: orientation))
     }
 

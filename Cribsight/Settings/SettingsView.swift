@@ -287,15 +287,27 @@ struct SettingsView: View {
     // MARK: Other
 
     private var alertsSection: some View {
-        Section("Alerts") {
+        Section {
             Toggle("Cry / sound alerts", isOn: $config.settings.cryAlertsEnabled)
             Toggle("Play a chime on alert", isOn: $config.settings.cryChimeEnabled)
+            Toggle("Charger & battery alerts", isOn: $config.settings.batteryAlertsEnabled)
+        } header: {
+            Text("Alerts")
+        } footer: {
+            Text("Charger alerts warn when the charger disconnects and when the battery runs low — handy for a wall-mounted monitor.")
         }
     }
 
     private var displaySection: some View {
         Section("Display") {
             Toggle("Keep screen awake", isOn: $config.settings.keepAwake)
+            Toggle("Haptic feedback", isOn: $config.settings.hapticsEnabled)
+            Picker("Hide controls after", selection: $config.settings.controlsHideSeconds) {
+                Text("2 seconds").tag(2.0)
+                Text("4 seconds").tag(4.0)
+                Text("8 seconds").tag(8.0)
+                Text("Never").tag(0.0)
+            }
             Picker("Night mode", selection: $config.settings.nightMode.trigger) {
                 ForEach(NightModeTrigger.allCases) { Text($0.label).tag($0) }
             }

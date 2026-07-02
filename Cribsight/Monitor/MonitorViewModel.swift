@@ -51,6 +51,7 @@ final class MonitorViewModel: ObservableObject {
     init(config: AppConfig) {
         self.config = config
         self.activeLayout = config.activeLayout
+        Haptics.isEnabled = config.settings.hapticsEnabled
         rebuildPanes()
         evaluateNightMode()
     }
@@ -225,11 +226,13 @@ final class MonitorViewModel: ObservableObject {
 
     /// Apply edited settings coming back from the Settings sheet.
     func applySettingsChange() {
+        Haptics.isEnabled = config.settings.hapticsEnabled
         rebuildPanes()
         connectThenStartSources()
         vitals.update(settings: config.settings.owlet)
         UIApplication.shared.isIdleTimerDisabled = config.settings.keepAwake
         evaluateNightMode()
+        scheduleControlsHide()
     }
 
     // MARK: Layout editing
@@ -297,9 +300,12 @@ final class MonitorViewModel: ObservableObject {
         }
     }
 
-    func scheduleControlsHide(after seconds: TimeInterval = 4) {
+    func scheduleControlsHide() {
         guard !editingLayout else { return }
         controlsHideWork?.cancel()
+        // User-tunable in Settings (Fast/Normal/Slow); 0 = keep controls up.
+        let seconds = config.settings.controlsHideSeconds
+        guard seconds > 0 else { return }
         let work = DispatchWorkItem { [weak self] in
             guard let self = self, !self.editingLayout else { return }
             withAnimation(.easeIn(duration: 0.4)) { self.controlsVisible = false }
@@ -380,7 +386,10 @@ final class MonitorViewModel: ObservableObject {
     private func batteryChanged() {
         let device = UIDevice.current
         let state = device.batteryState
+        // Track state transitions even while alerts are off, so re-enabling
+        // doesn't fire a stale "charger disconnected".
         defer { lastBatteryState = state }
+        guard config.settings.batteryAlertsEnabled else { return }
         guard device.batteryLevel >= 0 else { return }   // unknown (e.g. simulator)
         let level = Int((device.batteryLevel * 100).rounded())
 

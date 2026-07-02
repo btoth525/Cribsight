@@ -120,6 +120,7 @@ struct LayoutCanvas: View {
                             .glassPill(tint: Theme.danger)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Remove \(paneName) pane")
                 }
                 Spacer()
                 HStack {

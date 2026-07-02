@@ -56,6 +56,11 @@ struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) { renamingID = nil }
         }
+        // Persist as the user types so the password survives a swipe-down dismiss
+        // (Done isn't the only way to leave this sheet).
+        .onChange(of: password) { _, newValue in
+            config.frigatePassword = newValue
+        }
         .onAppear {
             config.settings.connection.mode = .frigate
             password = config.frigatePassword ?? ""

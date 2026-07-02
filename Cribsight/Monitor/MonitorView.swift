@@ -7,6 +7,7 @@ struct MonitorView: View {
     @ObservedObject var vm: MonitorViewModel
     @State private var showSettings = false
     @State private var showSaveView = false
+    @State private var showSoundEvents = false
     @State private var newViewName = ""
     @State private var vitalsSheet: VitalsSheet?
     @State private var babySheet: BabySheet?
@@ -85,6 +86,9 @@ struct MonitorView: View {
                 BabyControlsView(control: control, camera: sheet.camera, title: sheet.title)
             }
         }
+        .sheet(isPresented: $showSoundEvents) {
+            SoundEventsView(vm: vm)
+        }
         .alert("Save view", isPresented: $showSaveView) {
             TextField("View name", text: $newViewName)
             Button("Save") {
@@ -144,7 +148,8 @@ struct MonitorView: View {
                 }
                 ControlBar(vm: vm,
                            onOpenSettings: { showSettings = true },
-                           onSaveView: { showSaveView = true })
+                           onSaveView: { showSaveView = true },
+                           onShowEvents: { showSoundEvents = true })
             }
             .padding(.bottom, 18)
             .transition(.move(edge: .bottom).combined(with: .opacity))

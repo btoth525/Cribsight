@@ -5,25 +5,33 @@ struct ControlBar: View {
     @ObservedObject var vm: MonitorViewModel
     var onOpenSettings: () -> Void
     var onSaveView: () -> Void
+    var onShowEvents: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
-            GlassIconButton(systemName: "gearshape.fill") { onOpenSettings() }
+            GlassIconButton(systemName: "gearshape.fill", label: "Settings") { onOpenSettings() }
 
             viewsMenu
 
             GlassIconButton(systemName: "square.grid.2x2",
-                            active: vm.editingLayout) {
+                            active: vm.editingLayout,
+                            label: "Arrange layout") {
                 vm.setEditingLayout(!vm.editingLayout)
             }
 
             GlassIconButton(systemName: vm.nightActive ? "moon.fill" : "moon",
                             active: vm.nightActive,
-                            tint: Theme.accentWarm) {
+                            tint: Theme.accentWarm,
+                            label: "Night mode") {
                 vm.toggleNight()
             }
 
-            GlassIconButton(systemName: "lock.fill") {
+            GlassIconButton(systemName: vm.soundEvents.isEmpty ? "bell" : "bell.badge",
+                            label: "Sound history") {
+                onShowEvents()
+            }
+
+            GlassIconButton(systemName: "lock.fill", label: "Lock screen") {
                 vm.setLocked(true)
                 vm.showToast("Locked · long-press to unlock")
             }
@@ -60,6 +68,7 @@ struct ControlBar: View {
                 .frame(width: 46, height: 46)
                 .glassPill()
                 .contentShape(Circle())
+                .accessibilityLabel("Saved views")
         }
     }
 }

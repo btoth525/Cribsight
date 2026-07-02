@@ -54,6 +54,15 @@ struct DewarpUniformsData {
         u.panoUp = params.panoramaUpDegrees * .pi / 180
         u.panoDown = params.panoramaDownDegrees * .pi / 180
         u.roll = params.roll
+        if !isFisheye {
+            // Digital PTZ (passthrough): zoom floors at 1× and pan/tilt are
+            // view-space offsets clamped to the zoomed-in window, so even a stale
+            // fisheye-era orientation can never sample outside the frame.
+            u.zoom = max(1, orientation.zoom)
+            let limit = (1 - 1 / u.zoom) / 2
+            u.pan = min(max(orientation.pan, -limit), limit)
+            u.tilt = min(max(orientation.tilt, -limit), limit)
+        }
         return u
     }
 }

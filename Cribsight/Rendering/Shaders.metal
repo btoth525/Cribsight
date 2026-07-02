@@ -99,8 +99,12 @@ fragment float4 fsDewarp(VSOut in [[stage_in]],
     bool fisheye = (u.mode != 0);
 
     if (u.mode == 0) {
-        // Passthrough (normal camera / raw fisheye).
-        srcUV = fillUV(in.uv, u.texAspect, u.viewAspect);
+        // Passthrough (normal camera / raw fisheye) with digital PTZ: zoom about
+        // the view center, then pan/tilt as view-space offsets. Offsets are
+        // pre-clamped on the CPU so the window never leaves the frame.
+        float z = max(u.zoom, 1.0);
+        float2 v = (in.uv - 0.5) / z + 0.5 + float2(u.pan, u.tilt);
+        srcUV = fillUV(v, u.texAspect, u.viewAspect);
     } else if (u.mode == 1) {
         // Panorama: x → azimuth, y → polar angle.
         float coverage = (2.0 * M_PI_F) / max(u.zoom, 0.2);

@@ -33,6 +33,7 @@ struct CameraPaneView: View {
                     MetalDewarpView(renderer: pane.renderer)
                         .gesture(dragGesture(geo.size))
                         .simultaneousGesture(magnifyGesture())
+                        .onTapGesture(count: 2) { onToggleFullscreen() }
                 } else {
                     MetalDewarpView(renderer: pane.renderer)
                         .allowsHitTesting(false)
@@ -132,27 +133,29 @@ struct CameraPaneView: View {
         return HStack(spacing: 8) {
             if !tiny {
                 GlassIconButton(systemName: pane.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
-                                active: !pane.isMuted, size: 40) {
+                                active: !pane.isMuted, size: 40,
+                                label: pane.isMuted ? "Unmute" : "Mute") {
                     pane.toggleMute()
                 }
             }
             if !tiny && pane.camera.isOwletBridge && onBabyControls != nil {
-                GlassIconButton(systemName: "music.mic", size: 40) {
+                GlassIconButton(systemName: "music.mic", size: 40, label: "Talk and lullabies") {
                     onBabyControls?()
                 }
             }
-            if !compact && pane.camera.isFisheye {
-                GlassIconButton(systemName: "arrow.counterclockwise", size: 40) {
+            if !compact {
+                GlassIconButton(systemName: "arrow.counterclockwise", size: 40, label: "Reset view") {
                     pane.resetView()
                 }
             }
             if !compact {
-                GlassIconButton(systemName: "camera.fill", size: 40) {
+                GlassIconButton(systemName: "camera.fill", size: 40, label: "Save snapshot") {
                     takeSnapshot(size: geo.size)
                 }
             }
             GlassIconButton(systemName: isFullscreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
-                            size: 40) {
+                            size: 40,
+                            label: isFullscreen ? "Exit fullscreen" : "Fullscreen") {
                 onToggleFullscreen()
             }
         }
@@ -221,7 +224,7 @@ struct CameraPaneView: View {
                 let dx = Float((value.translation.width - lastDrag.width) / max(1, size.width))
                 let dy = Float((value.translation.height - lastDrag.height) / max(1, size.height))
                 lastDrag = value.translation
-                pane.applyDrag(dx: dx * 2.6, dy: dy * 2.0)
+                pane.applyDrag(dx: dx, dy: dy)
             }
             .onEnded { _ in lastDrag = .zero; pane.endInteraction() }
     }
